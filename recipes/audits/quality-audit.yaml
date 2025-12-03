@@ -1,0 +1,282 @@
+# Code Quality Audit Sub-Recipe
+# Reusable code quality analysis for code changes
+#
+# This recipe is designed to be composed into larger workflows
+# or run standalone for quality-focused reviews.
+
+name: "quality-audit"
+description: "Analyze code changes for quality, maintainability, and best practices"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["quality", "audit", "code-review", "maintainability"]
+
+recursion:
+  max_depth: 2
+  max_total_steps: 25
+
+context:
+  # Input
+  changed_files: []           # List of {path, additions, deletions, diff}
+  depth: "standard"           # quick | standard | thorough
+
+  # Configuration
+  check_complexity: true
+  check_duplication: true
+  check_naming: true
+  check_documentation: true
+
+steps:
+  # ============================================================
+  # Stage 1: Code Complexity Analysis
+  # ============================================================
+  - id: "complexity-analysis"
+    condition: "{{check_complexity}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Analyze code complexity in the changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Metrics to Evaluate
+
+      1. **Cyclomatic Complexity**
+         - Methods > 10: concerning
+         - Methods > 20: problematic
+         - Methods > 30: critical
+
+      2. **Cognitive Complexity**
+         - Nested conditionals
+         - Complex boolean expressions
+         - Multiple exit points
+
+      3. **Method Length**
+         - > 50 lines: concerning
+         - > 100 lines: problematic
+
+      4. **Class Size**
+         - > 300 lines: concerning
+         - > 500 lines: problematic
+
+      5. **Parameter Count**
+         - > 5 parameters: concerning
+         - > 8 parameters: problematic
+
+      For each finding:
+      - type: complexity category
+      - file: path
+      - line: start line
+      - metric_value: measured value
+      - threshold: what it should be
+      - severity: high | medium | low
+      - suggestion: how to refactor
+    output: "complexity_findings"
+    timeout: 240
+
+  # ============================================================
+  # Stage 2: Code Duplication Detection
+  # ============================================================
+  - id: "duplication-analysis"
+    condition: "{{check_duplication}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Detect code duplication in the changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Detection Criteria
+
+      1. **Exact Duplicates**: Identical code blocks (> 6 lines)
+      2. **Near Duplicates**: Similar code with minor variations
+      3. **Structural Duplicates**: Same algorithm, different names
+      4. **Cross-File Duplicates**: Same pattern in multiple files
+
+      For each finding:
+      - type: duplication category
+      - locations: [{file, start_line, end_line}]
+      - lines_duplicated: count
+      - severity: high (exact) | medium (near) | low (structural)
+      - suggestion: extraction or refactoring approach
+    output: "duplication_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 3: Naming & Convention Analysis
+  # ============================================================
+  - id: "naming-analysis"
+    condition: "{{check_naming}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Analyze naming conventions and code style.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Check For
+
+      1. **Naming Conventions**
+         - Inconsistent casing (camelCase vs snake_case)
+         - Non-descriptive names (x, temp, data)
+         - Misleading names (names that don't match behavior)
+         - Abbreviations that aren't obvious
+
+      2. **Convention Violations**
+         - Language idiom violations
+         - Framework convention violations
+         - Project-specific convention violations
+
+      3. **Code Organization**
+         - Logical grouping of methods
+         - Import organization
+         - File structure
+
+      For each finding:
+      - type: naming | convention | organization
+      - file: path
+      - line: number
+      - current: what it is now
+      - suggested: what it should be
+      - severity: medium | low
+      - rationale: why this matters
+    output: "naming_findings"
+    timeout: 120
+
+  # ============================================================
+  # Stage 4: Documentation Analysis
+  # ============================================================
+  - id: "documentation-analysis"
+    condition: "{{check_documentation}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Analyze documentation quality in the changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Check For
+
+      1. **Missing Documentation**
+         - Public methods without docstrings
+         - Complex logic without comments
+         - Non-obvious code without explanation
+
+      2. **Outdated Documentation**
+         - Comments that don't match code
+         - Docstrings with wrong parameters
+         - README references to changed code
+
+      3. **Documentation Quality**
+         - Vague descriptions ("handles stuff")
+         - Missing parameter documentation
+         - Missing return value documentation
+         - Missing example usage for complex APIs
+
+      For each finding:
+      - type: missing | outdated | quality
+      - file: path
+      - line: number
+      - element: what needs documentation
+      - severity: high (public API) | medium | low
+      - suggestion: what documentation to add
+    output: "documentation_findings"
+    timeout: 120
+
+  # ============================================================
+  # Stage 5: Deep Analysis (thorough mode only)
+  # ============================================================
+  - id: "deep-analysis"
+    condition: "{{depth}} == 'thorough'"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Perform deep quality analysis of the changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Previous Findings
+      - Complexity: {{complexity_findings}}
+      - Duplication: {{duplication_findings}}
+      - Naming: {{naming_findings}}
+      - Documentation: {{documentation_findings}}
+
+      ## Deep Analysis
+
+      1. **Design Pattern Appropriateness**
+         - Are patterns used correctly?
+         - Are simpler solutions available?
+         - Does complexity match problem complexity?
+
+      2. **SOLID Principles**
+         - Single Responsibility violations
+         - Open/Closed principle issues
+         - Dependency inversion problems
+
+      3. **Testability**
+         - Is this code testable?
+         - Hidden dependencies?
+         - Side effects that complicate testing?
+
+      4. **Future Maintainability**
+         - Will this be easy to modify?
+         - Clear separation of concerns?
+         - Well-defined interfaces?
+
+      For each finding:
+      - category: design | solid | testability | maintainability
+      - description: what the issue is
+      - impact: why it matters
+      - suggestion: how to improve
+      - severity: high | medium | low
+    output: "deep_findings"
+    timeout: 300
+
+  # ============================================================
+  # Stage 6: Synthesize Quality Report
+  # ============================================================
+  - id: "synthesize-quality"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Synthesize all quality findings into a prioritized report.
+
+      ## Findings
+      - Complexity: {{complexity_findings}}
+      - Duplication: {{duplication_findings}}
+      - Naming: {{naming_findings}}
+      - Documentation: {{documentation_findings}}
+      - Deep Analysis: {{deep_findings}}
+
+      ## Depth Level: {{depth}}
+
+      ## Tasks
+
+      1. **Prioritize**: Sort by impact on maintainability
+      2. **Group**: Cluster related issues
+      3. **Summarize**: Overall quality assessment
+
+      ## Output
+
+      Return:
+      - blocking_issues: [{...}] (quality too low to merge)
+      - improvements: [{...}] (should fix but not blocking)
+      - suggestions: [{...}] (nice to have)
+      - quality_score: 1-10 assessment
+      - summary: overall quality assessment
+      - technical_debt_added: estimate of debt being introduced
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Standalone:
+#   amplifier run "execute recipes/audits/quality-audit.yaml with changed_files=..."
+#
+# Quick review:
+#   amplifier run "execute recipes/audits/quality-audit.yaml with depth=quick"
+#
+# Thorough review:
+#   amplifier run "execute recipes/audits/quality-audit.yaml with depth=thorough"
+#
+# ============================================================

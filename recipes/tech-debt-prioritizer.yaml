@@ -1,0 +1,426 @@
+# Tech Debt Prioritizer Recipe
+# Systematic tech debt identification and prioritization
+#
+# Priority: P1 (High Value)
+# Replaces: scenario-tools/tech-debt-prioritizer.md (Python implementation)
+#
+# This recipe demonstrates:
+# - Foreach iteration over file discovery
+# - Parallel scanning with collect
+# - Multi-criteria prioritization
+# - Actionable output with JIRA integration
+
+name: "tech-debt-prioritizer"
+description: "Scan codebase for tech debt, categorize by impact, and create prioritized remediation plan"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["tech-debt", "refactoring", "code-quality", "maintenance"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 100
+
+context:
+  # Scan configuration
+  scan_paths: ["."]           # Paths to scan
+  exclude_paths: ["node_modules", ".venv", "dist", "build"]
+  file_patterns: ["*.py", "*.ts", "*.js", "*.java", "*.go"]
+
+  # Prioritization weights
+  impact_weight: 0.4          # How much the debt affects users/business
+  effort_weight: 0.3          # How hard to fix (inverse - easy = higher priority)
+  risk_weight: 0.3            # How risky is leaving it unfixed
+
+  # Output
+  max_items: 50               # Max debt items to report
+  create_jira_tickets: false  # Auto-create JIRA tickets
+  jira_project: ""            # JIRA project key if creating tickets
+
+steps:
+  # ============================================================
+  # Stage 1: Discover Files to Scan
+  # ============================================================
+  - id: "discover-files"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover files to scan for tech debt.
+
+      Include paths: {{scan_paths}}
+      Exclude paths: {{exclude_paths}}
+      File patterns: {{file_patterns}}
+
+      Return list of file paths to analyze.
+      Group by directory for efficient scanning.
+      Limit to reasonable number (< 500 files for performance).
+
+      Return:
+      - files: [file_paths]
+      - total_count: number
+      - by_directory: {dir: [files]}
+      - by_type: {extension: count}
+    output: "discovered_files"
+    timeout: 120
+
+  # ============================================================
+  # Stage 2: Parallel Debt Category Scanning
+  # ============================================================
+  - id: "scan-code-smells"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Scan for code smell patterns in the codebase.
+
+      Files to scan: {{discovered_files.files}}
+
+      Look for:
+      1. **Long Methods**: Methods > 50 lines
+      2. **Large Classes**: Classes > 500 lines
+      3. **Deep Nesting**: > 4 levels of indentation
+      4. **Duplicate Code**: Similar code blocks
+      5. **Complex Conditionals**: Methods with cyclomatic complexity > 10
+      6. **God Objects**: Classes doing too much
+      7. **Feature Envy**: Methods using other classes more than their own
+
+      For each finding:
+      - type: string
+      - file: path
+      - line: number
+      - description: what's wrong
+      - severity: high | medium | low
+      - fix_effort: hours estimate
+    output: "code_smells"
+    timeout: 600
+
+  - id: "scan-outdated-patterns"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Scan for outdated patterns and deprecated usage.
+
+      Files to scan: {{discovered_files.files}}
+
+      Look for:
+      1. **Deprecated APIs**: Using deprecated functions/classes
+      2. **Old Syntax**: Outdated language features
+      3. **Legacy Patterns**: Patterns superseded by better alternatives
+      4. **Compatibility Shims**: Code for old versions no longer supported
+      5. **TODO/FIXME/HACK**: Comments indicating known issues
+
+      For each finding:
+      - type: string
+      - file: path
+      - line: number
+      - description: what's outdated
+      - modern_alternative: what to use instead
+      - severity: high | medium | low
+      - fix_effort: hours estimate
+    output: "outdated_patterns"
+    timeout: 600
+
+  - id: "scan-security-debt"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Scan for security-related tech debt.
+
+      Files to scan: {{discovered_files.files}}
+
+      Look for:
+      1. **Hardcoded Secrets**: Credentials in code
+      2. **Insecure Patterns**: SQL injection risks, XSS vectors
+      3. **Missing Input Validation**: Unvalidated user input
+      4. **Weak Crypto**: Outdated algorithms, weak hashing
+      5. **Overly Permissive**: Broad permissions, no auth checks
+      6. **Dependency Vulnerabilities**: Known CVEs in dependencies
+
+      For each finding:
+      - type: string
+      - file: path
+      - line: number
+      - description: security risk
+      - cve: if applicable
+      - severity: critical | high | medium | low
+      - fix_effort: hours estimate
+    output: "security_debt"
+    timeout: 600
+
+  - id: "scan-test-debt"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Scan for testing-related tech debt.
+
+      Files to scan: {{discovered_files.files}}
+
+      Look for:
+      1. **Missing Tests**: Code paths without test coverage
+      2. **Flaky Tests**: Tests that fail intermittently
+      3. **Slow Tests**: Tests taking > 30 seconds
+      4. **Test Smells**: Poor test structure, excessive mocking
+      5. **Dead Tests**: Tests that never fail (testing nothing)
+      6. **Missing Integration Tests**: Only unit tests for complex flows
+
+      For each finding:
+      - type: string
+      - file: path (code or test file)
+      - description: testing gap
+      - impact: what could break without this
+      - severity: high | medium | low
+      - fix_effort: hours estimate
+    output: "test_debt"
+    timeout: 600
+
+  - id: "scan-documentation-debt"
+    agent: "foundation:explorer"
+    prompt: |
+      Scan for documentation-related tech debt.
+
+      Files to scan: {{discovered_files.files}}
+
+      Look for:
+      1. **Missing Docstrings**: Public APIs without documentation
+      2. **Outdated Docs**: Comments that don't match code
+      3. **Missing README**: Directories without explanation
+      4. **Undocumented Config**: Config options without explanation
+      5. **Missing API Docs**: Endpoints without documentation
+      6. **Stale ADRs**: Architecture decisions that no longer apply
+
+      For each finding:
+      - type: string
+      - file: path
+      - description: documentation gap
+      - severity: high | medium | low
+      - fix_effort: hours estimate
+    output: "documentation_debt"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Aggregate and Deduplicate
+  # ============================================================
+  - id: "aggregate-findings"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Aggregate all tech debt findings and deduplicate.
+
+      ## Findings Sources
+      - Code Smells: {{code_smells}}
+      - Outdated Patterns: {{outdated_patterns}}
+      - Security Debt: {{security_debt}}
+      - Test Debt: {{test_debt}}
+      - Documentation Debt: {{documentation_debt}}
+
+      ## Tasks
+
+      1. **Merge**: Combine all findings into single list
+      2. **Deduplicate**: Remove duplicates (same file+line+type)
+      3. **Categorize**: Assign categories (code_quality, security, testing, docs, architecture)
+      4. **Enrich**: Add context from multiple scans
+
+      Return:
+      - all_findings: [{...finding, category, sources}]
+      - by_category: {category: [findings]}
+      - by_severity: {severity: count}
+      - by_file: {file: [findings]}
+      - total_count: number
+    output: "aggregated_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 4: Score and Prioritize
+  # ============================================================
+  - id: "score-findings"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Score each tech debt item for prioritization.
+
+      ## Findings
+      {{aggregated_findings.all_findings}}
+
+      ## Scoring Weights
+      - Impact: {{impact_weight}} (user/business effect)
+      - Effort: {{effort_weight}} (inverse - easier = higher)
+      - Risk: {{risk_weight}} (danger of not fixing)
+
+      ## Scoring Criteria
+
+      **Impact Score (1-10)**
+      - 10: Affects all users, core functionality
+      - 7: Affects many users, important feature
+      - 4: Affects some users, secondary feature
+      - 1: Minimal user impact, internal only
+
+      **Effort Score (1-10, inverse)**
+      - 10: < 1 hour fix
+      - 7: 1-4 hours fix
+      - 4: 1-2 days fix
+      - 1: > 1 week fix
+
+      **Risk Score (1-10)**
+      - 10: Security vulnerability, data loss risk
+      - 7: Reliability issues, outage risk
+      - 4: Performance degradation
+      - 1: Minor annoyance
+
+      **Priority Score** = (impact × {{impact_weight}}) + (effort × {{effort_weight}}) + (risk × {{risk_weight}})
+
+      For each finding, add:
+      - impact_score: number
+      - effort_score: number
+      - risk_score: number
+      - priority_score: calculated
+      - priority_rank: 1-N ordering
+    output: "scored_findings"
+    timeout: 240
+
+  # ============================================================
+  # Stage 5: Group into Epics
+  # ============================================================
+  - id: "group-into-epics"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Group related tech debt items into actionable epics.
+
+      ## Scored Findings (top {{max_items}})
+      {{scored_findings}}
+
+      ## Grouping Rules
+
+      Group by:
+      1. **Related files**: Same module/directory
+      2. **Same type**: All "missing tests" together
+      3. **Same fix**: Can be fixed in one PR
+      4. **Dependencies**: Must be fixed in order
+
+      For each epic:
+      - id: E001, E002, etc.
+      - title: descriptive name
+      - description: what this addresses
+      - items: [finding_ids]
+      - total_effort: sum of item efforts
+      - total_priority: average priority score
+      - suggested_order: which items first
+      - dependencies: [epic_ids] if any
+      - recommended_owner: team/role
+
+      Return:
+      - epics: [{...}]
+      - standalone_items: findings that don't fit epics
+      - recommended_sequence: order to tackle epics
+    output: "grouped_epics"
+    timeout: 240
+
+  # ============================================================
+  # Stage 6: Generate Remediation Plan
+  # ============================================================
+  - id: "generate-remediation-plan"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate a comprehensive tech debt remediation plan.
+
+      ## Input
+      - Aggregated findings: {{aggregated_findings}}
+      - Scored findings: {{scored_findings}}
+      - Grouped epics: {{grouped_epics}}
+
+      ## Create Plan Document
+
+      # Tech Debt Remediation Plan
+
+      ## Executive Summary
+      - Total debt items found: X
+      - Critical items: Y
+      - Estimated total effort: Z hours
+      - Recommended timeline: W weeks
+
+      ## Priority Matrix
+
+      | Priority | Items | Effort | Risk if Ignored |
+      |----------|-------|--------|-----------------|
+      | Critical | ...   | ...    | ...             |
+      | High     | ...   | ...    | ...             |
+      | Medium   | ...   | ...    | ...             |
+      | Low      | ...   | ...    | ...             |
+
+      ## Recommended Sequence
+
+      ### Sprint 1: Quick Wins & Critical Fixes
+      - Items that are high priority AND low effort
+      - Any critical security issues
+
+      ### Sprint 2-3: Major Refactoring
+      - Largest impact improvements
+      - Foundation work for future
+
+      ### Ongoing: Continuous Improvement
+      - Lower priority items
+      - Boy scout rule integration
+
+      ## Epics Detail
+
+      (For each epic: description, items, effort, owner suggestion)
+
+      ## Metrics to Track
+      - Debt reduction rate
+      - Debt introduction rate
+      - Time spent on debt vs features
+
+      ## Recommendations
+      - Process improvements to prevent new debt
+      - Tools to automate detection
+      - Team practices
+    output: "remediation_plan"
+    timeout: 300
+
+  # ============================================================
+  # Stage 7: Create JIRA Tickets (if enabled)
+  # ============================================================
+  - id: "create-jira-tickets"
+    condition: "{{create_jira_tickets}} == 'true'"
+    agent: "developer-expertise:integration-specialist"
+    prompt: |
+      Create JIRA tickets for tech debt epics.
+
+      ## JIRA Project: {{jira_project}}
+
+      ## Epics to Create
+      {{grouped_epics.epics}}
+
+      ## For Each Epic
+
+      Create Epic:
+      - Summary: [Tech Debt] {epic.title}
+      - Description: {epic.description}
+      - Labels: tech-debt, automated
+      - Priority: based on average priority score
+
+      Create Stories under Epic:
+      - For each item in epic
+      - Summary: {item.type}: {item.description}
+      - Description: File: {item.file}, Line: {item.line}, Fix: {item.suggestion}
+      - Story Points: based on effort estimate
+
+      Return:
+      - created_epics: [{jira_key, title}]
+      - created_stories: [{jira_key, epic_key, title}]
+      - total_created: count
+    output: "jira_tickets"
+    timeout: 300
+    on_error: "continue"
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Basic scan:
+#   amplifier run "execute recipes/tech-debt-prioritizer.yaml"
+#
+# Specific paths:
+#   amplifier run "execute recipes/tech-debt-prioritizer.yaml with scan_paths='[\"src\", \"lib\"]'"
+#
+# With JIRA integration:
+#   amplifier run "execute recipes/tech-debt-prioritizer.yaml with create_jira_tickets=true jira_project=TECH"
+#
+# Custom prioritization:
+#   amplifier run "execute recipes/tech-debt-prioritizer.yaml with impact_weight=0.5 risk_weight=0.4 effort_weight=0.1"
+#
+# ============================================================

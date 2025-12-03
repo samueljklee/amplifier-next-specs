@@ -1,0 +1,466 @@
+# Test Suite Analyzer Recipe
+# Analyze test coverage, flaky tests, and test priorities
+#
+# Priority: P1 (High Value)
+#
+# This recipe demonstrates:
+# - Parallel test analysis
+# - Metrics aggregation
+# - Multi-dimensional quality scoring
+
+name: "test-suite-analyzer"
+description: "Analyze test coverage gaps, flaky tests, and suggest test priorities"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["testing", "coverage", "quality", "analysis"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 60
+
+context:
+  # Scope
+  test_paths: ["tests/", "test/", "**/*_test.*", "**/*.test.*"]
+  source_paths: ["src/", "lib/"]
+  exclude_paths: ["node_modules", ".venv", "dist"]
+
+  # Analysis configuration
+  coverage_threshold: 80         # Target coverage percentage
+  flaky_threshold: 3             # Failures in last N runs to flag as flaky
+  slow_test_threshold: 30        # Seconds to flag as slow
+
+  # Historical data
+  test_history_days: 30          # Days of history to analyze
+
+  # Output
+  generate_test_plan: true
+  prioritize_for: "coverage"     # coverage | reliability | speed
+
+steps:
+  # ============================================================
+  # Stage 1: Discover Test Suite
+  # ============================================================
+  - id: "discover-tests"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover all tests in the codebase.
+
+      ## Test Paths: {{test_paths}}
+      ## Exclude: {{exclude_paths}}
+
+      ## Discovery Tasks
+
+      1. **Find Test Files**
+         - Unit tests
+         - Integration tests
+         - E2E tests
+         - Performance tests
+
+      2. **Parse Test Structure**
+         - Test frameworks used
+         - Test organization (suites, describes, etc.)
+         - Number of test cases
+
+      3. **Identify Test Types**
+         - Unit: isolated, fast, mocked dependencies
+         - Integration: multiple components, real dependencies
+         - E2E: full system, browser/API tests
+         - Performance: load, stress, benchmark
+
+      Return:
+      - test_files: [{path, framework, type, test_count}]
+      - by_type: {unit: count, integration: count, e2e: count}
+      - frameworks: [framework names used]
+      - total_tests: count
+      - test_organization: description of structure
+    output: "discovered_tests"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Analyze Coverage
+  # ============================================================
+  - id: "analyze-coverage"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Analyze test coverage across the codebase.
+
+      ## Source Paths: {{source_paths}}
+      ## Test Discovery: {{discovered_tests}}
+      ## Threshold: {{coverage_threshold}}%
+
+      ## Coverage Analysis
+
+      1. **Run Coverage Report**
+         - Line coverage
+         - Branch coverage
+         - Function coverage
+
+      2. **Identify Gaps**
+         - Uncovered files
+         - Uncovered functions
+         - Uncovered branches
+
+      3. **Coverage by Area**
+         - By directory
+         - By module
+         - By file
+
+      4. **Critical Gaps**
+         - Business logic without tests
+         - Error handling untested
+         - Edge cases missing
+
+      Return:
+      - overall_coverage: {line: %, branch: %, function: %}
+      - meets_threshold: boolean
+      - uncovered_files: [{path, line_coverage, importance}]
+      - uncovered_functions: [{file, function, lines, risk_assessment}]
+      - coverage_by_directory: [{dir, coverage_percent}]
+      - critical_gaps: [{file, area, risk, suggested_tests}]
+    output: "coverage_analysis"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Identify Flaky Tests
+  # ============================================================
+  - id: "analyze-flaky-tests"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Identify flaky tests from historical data.
+
+      ## Test History: Last {{test_history_days}} days
+      ## Flaky Threshold: {{flaky_threshold}} failures
+
+      ## Flaky Test Detection
+
+      1. **Historical Analysis**
+         - Tests that pass and fail without code changes
+         - Tests with inconsistent timing
+         - Tests that fail only in CI
+
+      2. **Pattern Detection**
+         - Timing-dependent tests
+         - Order-dependent tests
+         - Environment-dependent tests
+         - Race condition indicators
+
+      3. **Root Cause Categories**
+         - Async/timing issues
+         - Shared state
+         - External dependencies
+         - Resource contention
+         - Date/time sensitivity
+
+      4. **Impact Assessment**
+         - CI reliability impact
+         - Developer trust impact
+         - Time wasted investigating
+
+      Return:
+      - flaky_tests: [{test, file, failure_rate, last_flake, pattern, likely_cause}]
+      - most_flaky: top 10 by failure rate
+      - by_cause: {timing: [], state: [], external: [], other: []}
+      - ci_impact: {false_failures_per_week, hours_wasted_estimate}
+      - fix_recommendations: [{test, fix_approach, effort}]
+    output: "flaky_analysis"
+    timeout: 240
+
+  # ============================================================
+  # Stage 4: Identify Slow Tests
+  # ============================================================
+  - id: "analyze-slow-tests"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Identify slow tests that impact development velocity.
+
+      ## Slow Threshold: {{slow_test_threshold}} seconds
+
+      ## Slow Test Analysis
+
+      1. **Timing Analysis**
+         - Test execution times
+         - Setup/teardown times
+         - Network call times
+
+      2. **Categorization**
+         - Legitimately slow (E2E, integration)
+         - Unnecessarily slow (could be faster)
+         - Outliers (specific slow operations)
+
+      3. **Optimization Opportunities**
+         - Parallelization candidates
+         - Mock candidates
+         - Setup optimization
+
+      4. **Impact on CI**
+         - Total CI time contribution
+         - Critical path impact
+         - Developer feedback loop
+
+      Return:
+      - slow_tests: [{test, file, duration_seconds, type, optimization_potential}]
+      - total_slow_time: seconds
+      - ci_impact: {total_time, could_save}
+      - optimization_opportunities: [{test, current, potential, approach}]
+      - parallelization_candidates: [{tests, potential_speedup}]
+    output: "slow_analysis"
+    timeout: 180
+
+  # ============================================================
+  # Stage 5: Analyze Test Quality
+  # ============================================================
+  - id: "analyze-test-quality"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Analyze the quality of existing tests.
+
+      ## Test Discovery: {{discovered_tests}}
+
+      ## Quality Dimensions
+
+      1. **Test Structure**
+         - Clear arrange/act/assert
+         - Single assertion per test (generally)
+         - Descriptive names
+
+      2. **Test Independence**
+         - No shared mutable state
+         - No order dependencies
+         - Proper setup/teardown
+
+      3. **Test Coverage Quality**
+         - Testing behavior, not implementation
+         - Edge cases covered
+         - Error paths tested
+
+      4. **Maintainability**
+         - DRY test utilities
+         - Clear test data
+         - Good use of fixtures
+
+      5. **Test Smells**
+         - Tests that never fail
+         - Tests with no assertions
+         - Overly complex tests
+         - Tests testing mocks
+
+      Return:
+      - quality_score: 1-10
+      - quality_issues: [{test, issue, severity, suggestion}]
+      - test_smells: [{smell, occurrences, examples}]
+      - best_practices_followed: [which ones]
+      - best_practices_missing: [which ones]
+      - improvement_priorities: [{area, impact, effort}]
+    output: "quality_analysis"
+    timeout: 300
+
+  # ============================================================
+  # Stage 6: Generate Test Priorities
+  # ============================================================
+  - id: "generate-priorities"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Generate prioritized test improvements.
+
+      ## Analysis Results
+      - Coverage: {{coverage_analysis}}
+      - Flaky: {{flaky_analysis}}
+      - Slow: {{slow_analysis}}
+      - Quality: {{quality_analysis}}
+
+      ## Prioritize For: {{prioritize_for}}
+
+      ## Priority Scoring
+
+      For each improvement, score by:
+      - Impact: How much it improves {{prioritize_for}}
+      - Effort: Time to implement
+      - Risk: Risk of not doing it
+      - Dependencies: What needs to happen first
+
+      ## Categories
+
+      1. **New Tests Needed**
+         - Critical coverage gaps
+         - High-risk untested code
+         - Missing edge cases
+
+      2. **Tests to Fix**
+         - Flaky tests to stabilize
+         - Slow tests to optimize
+         - Quality issues to address
+
+      3. **Tests to Remove**
+         - Redundant tests
+         - Tests with no value
+         - Dead tests
+
+      4. **Infrastructure Improvements**
+         - Parallelization
+         - Better fixtures
+         - CI optimization
+
+      Return:
+      - priority_list: [{rank, category, item, impact, effort, details}]
+      - quick_wins: items with high impact, low effort
+      - strategic_improvements: larger initiatives
+      - estimated_coverage_improvement: if all done
+      - estimated_ci_time_improvement: if all done
+    output: "test_priorities"
+    timeout: 240
+
+  # ============================================================
+  # Stage 7: Generate Test Plan (if enabled)
+  # ============================================================
+  - id: "generate-test-plan"
+    condition: "{{generate_test_plan}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate a comprehensive test improvement plan.
+
+      ## All Analysis
+      - Coverage: {{coverage_analysis}}
+      - Flaky: {{flaky_analysis}}
+      - Slow: {{slow_analysis}}
+      - Quality: {{quality_analysis}}
+      - Priorities: {{test_priorities}}
+
+      ## Test Plan Structure
+
+      # Test Suite Improvement Plan
+
+      ## Executive Summary
+      - Current state (coverage, reliability, speed)
+      - Target state
+      - Key initiatives
+
+      ## Current State Assessment
+      - Coverage metrics
+      - Reliability metrics (flaky rate)
+      - Speed metrics
+      - Quality score
+
+      ## Phase 1: Quick Wins (Week 1-2)
+      - Fix most impactful flaky tests
+      - Add critical missing tests
+      - Remove dead tests
+
+      ## Phase 2: Foundation (Week 3-4)
+      - Test infrastructure improvements
+      - Parallelization
+      - Better fixtures
+
+      ## Phase 3: Coverage Push (Week 5-8)
+      - Systematic coverage improvement
+      - New test development
+      - Quality improvements
+
+      ## Phase 4: Optimization (Ongoing)
+      - Speed optimization
+      - Maintenance mode
+      - Continuous improvement
+
+      ## Success Metrics
+      - Coverage target: {{coverage_threshold}}%
+      - Flaky rate target: <1%
+      - CI time target: X minutes
+
+      ## Resource Estimates
+      - Time investment
+      - Skills needed
+
+      Return:
+      - test_plan: full markdown document
+      - milestones: [{name, deadline, criteria}]
+      - resource_estimate: hours
+      - expected_outcomes: {coverage, reliability, speed}
+    output: "test_plan"
+    timeout: 300
+
+  # ============================================================
+  # Stage 8: Generate Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive test suite analysis report.
+
+      ## All Data
+      - Discovery: {{discovered_tests}}
+      - Coverage: {{coverage_analysis}}
+      - Flaky: {{flaky_analysis}}
+      - Slow: {{slow_analysis}}
+      - Quality: {{quality_analysis}}
+      - Priorities: {{test_priorities}}
+      - Plan: {{test_plan}}
+
+      ## Report Sections
+
+      # Test Suite Analysis Report
+
+      ## Summary
+      - Total tests: X
+      - Coverage: X%
+      - Flaky rate: X%
+      - Quality score: X/10
+
+      ## Coverage Analysis
+      - Current vs target
+      - Critical gaps
+      - By area breakdown
+
+      ## Reliability Analysis
+      - Flaky test summary
+      - Root causes
+      - Fix recommendations
+
+      ## Performance Analysis
+      - CI time breakdown
+      - Slow test summary
+      - Optimization opportunities
+
+      ## Quality Analysis
+      - Test quality score
+      - Common issues
+      - Best practices
+
+      ## Recommendations
+      - Priority ordered improvements
+      - Quick wins
+      - Strategic initiatives
+
+      ## Appendix
+      - Full test inventory
+      - Detailed metrics
+      - Historical trends
+
+      Return:
+      - report: full markdown document
+      - dashboard_metrics: {coverage, flaky_rate, ci_time, quality_score}
+      - action_items: [{item, owner, priority, deadline}]
+    output: "analysis_report"
+    timeout: 180
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Full analysis:
+#   amplifier run "execute recipes/test-suite-analyzer.yaml"
+#
+# Focus on coverage:
+#   amplifier run "execute recipes/test-suite-analyzer.yaml with prioritize_for='coverage'"
+#
+# Focus on reliability (flaky tests):
+#   amplifier run "execute recipes/test-suite-analyzer.yaml with prioritize_for='reliability'"
+#
+# Custom paths:
+#   amplifier run "execute recipes/test-suite-analyzer.yaml with test_paths='[\"__tests__/\"]' source_paths='[\"app/\"]'"
+#
+# Skip test plan:
+#   amplifier run "execute recipes/test-suite-analyzer.yaml with generate_test_plan=false"
+#
+# ============================================================

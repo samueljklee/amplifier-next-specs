@@ -1,0 +1,245 @@
+# PR Reviewer Recipe
+# Comprehensive pull request review pipeline using parallel analysis
+#
+# Priority: P0 (Critical Path)
+# Replaces: scenario-tools/pr-reviewer.md (Python implementation)
+#
+# This recipe demonstrates:
+# - Parallel multi-perspective analysis (foreach + parallel)
+# - Recipe composition (type: recipe for sub-workflows)
+# - Conditional routing based on findings
+# - Context accumulation across steps
+
+name: "pr-reviewer"
+description: "Comprehensive PR review with security, quality, and breaking change analysis"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["code-review", "pr", "security", "quality"]
+
+# Recursion limits for composed sub-recipes
+recursion:
+  max_depth: 5
+  max_total_steps: 50
+
+# Input context - caller provides these
+context:
+  pr_url: ""                    # Required: GitHub/GitLab PR URL
+  depth: "standard"             # quick | standard | thorough
+  severity_threshold: "medium"  # low | medium | high | critical
+  post_comment: true            # Post results as PR comment
+  auto_approve_threshold: 0     # 0 blocking issues = suggest approve
+
+steps:
+  # ============================================================
+  # Stage 1: Gather Context
+  # ============================================================
+  - id: "gather-pr-context"
+    agent: "foundation:explorer"
+    prompt: |
+      Fetch comprehensive context for PR: {{pr_url}}
+
+      Gather:
+      1. PR metadata (title, description, author, branch)
+      2. File diff (all changed files with context)
+      3. Existing comments and reviews
+      4. Linked issues (from PR description and commits)
+      5. Related PRs (same files, same author, same branch prefix)
+
+      Return structured data with:
+      - pr: {url, title, description, author, base_branch, head_branch}
+      - changed_files: [{path, additions, deletions, diff}]
+      - linked_issues: [{key, title, status}]
+      - related_prs: [{url, title, status}]
+    output: "pr_context"
+    timeout: 120
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+
+  # ============================================================
+  # Stage 2: Parallel Analysis (the power of recipes)
+  # ============================================================
+  - id: "security-analysis"
+    type: "recipe"
+    recipe: "audits/security-audit.yaml"
+    context:
+      changed_files: "{{pr_context.changed_files}}"
+      severity_threshold: "{{severity_threshold}}"
+    output: "security_findings"
+
+  - id: "code-quality-analysis"
+    type: "recipe"
+    recipe: "audits/quality-audit.yaml"
+    context:
+      changed_files: "{{pr_context.changed_files}}"
+      depth: "{{depth}}"
+    output: "quality_findings"
+
+  - id: "breaking-change-analysis"
+    type: "recipe"
+    recipe: "audits/breaking-change-audit.yaml"
+    context:
+      changed_files: "{{pr_context.changed_files}}"
+    output: "breaking_findings"
+
+  - id: "architecture-analysis"
+    condition: "{{depth}} == 'thorough'"
+    type: "recipe"
+    recipe: "audits/architecture-audit.yaml"
+    context:
+      changed_files: "{{pr_context.changed_files}}"
+    output: "architecture_findings"
+
+  # ============================================================
+  # Stage 3: Run Tests (if test runner available)
+  # ============================================================
+  - id: "run-affected-tests"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Identify and run tests affected by these changes:
+
+      Changed files:
+      {{pr_context.changed_files}}
+
+      Actions:
+      1. Identify test files that cover changed code
+      2. Run affected tests
+      3. Calculate coverage for new/changed lines
+      4. Report any failures with context
+
+      Return:
+      - tests_run: number
+      - tests_passed: number
+      - tests_failed: number
+      - coverage_percent: number
+      - failures: [{test, error, file, line}]
+    output: "test_results"
+    timeout: 600
+    on_error: "continue"  # Tests may not exist or may timeout
+
+  # ============================================================
+  # Stage 4: Synthesize Findings
+  # ============================================================
+  - id: "synthesize-findings"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Synthesize PR review findings into a comprehensive assessment.
+
+      ## PR Context
+      - URL: {{pr_context.pr.url}}
+      - Title: {{pr_context.pr.title}}
+      - Author: {{pr_context.pr.author}}
+      - Files changed: {{pr_context.changed_files}}
+
+      ## Analysis Results
+
+      ### Security Findings
+      {{security_findings}}
+
+      ### Code Quality Findings
+      {{quality_findings}}
+
+      ### Breaking Change Findings
+      {{breaking_findings}}
+
+      ### Architecture Findings (if available)
+      {{architecture_findings}}
+
+      ### Test Results
+      {{test_results}}
+
+      ## Your Task
+      1. Prioritize all findings by severity (critical > high > medium > low)
+      2. Identify blocking issues (must fix before merge)
+      3. Identify suggestions (nice to have)
+      4. Determine recommendation: APPROVE | REQUEST_CHANGES | COMMENT
+      5. Calculate confidence score (0-100)
+
+      Return structured synthesis with:
+      - blocking_issues: [{severity, category, description, file, line, suggestion}]
+      - suggestions: [{priority, description, file, line}]
+      - recommendation: string
+      - confidence: number
+      - summary: string (2-3 sentences)
+    output: "synthesis"
+    timeout: 300
+
+  # ============================================================
+  # Stage 5: Generate Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate a comprehensive PR review report in markdown format.
+
+      ## Input Data
+      PR: {{pr_context.pr.title}} ({{pr_context.pr.url}})
+      Synthesis: {{synthesis}}
+
+      ## Report Structure
+
+      Create a report with:
+
+      1. **Executive Summary**
+         - One-line verdict with emoji (✅ ⚠️ ❌)
+         - Recommendation and confidence
+         - Key stats (files, issues found, tests)
+
+      2. **Blocking Issues** (if any)
+         - Each issue with file:line, description, suggestion
+         - Code snippets where helpful
+
+      3. **Suggestions** (if any)
+         - Prioritized list of improvements
+         - Not blocking but recommended
+
+      4. **Analysis Details**
+         - Security summary
+         - Quality summary
+         - Breaking changes summary
+         - Test results summary
+
+      5. **Suggested Reviewers** (based on file ownership)
+
+      Format for GitHub PR comment (markdown with collapsible sections).
+    output: "review_report"
+    timeout: 180
+
+  # ============================================================
+  # Stage 6: Determine Final Action
+  # ============================================================
+  - id: "determine-action"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Based on the synthesis, determine the final action:
+
+      Synthesis: {{synthesis}}
+      Auto-approve threshold: {{auto_approve_threshold}} blocking issues
+
+      If blocking_issues count <= {{auto_approve_threshold}}:
+        → Recommend: APPROVE
+      Else:
+        → Recommend: REQUEST_CHANGES
+
+      Return:
+      - action: "approve" | "request_changes" | "comment"
+      - reason: string
+      - should_post: boolean (based on {{post_comment}})
+    output: "final_action"
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Basic usage:
+#   amplifier run "execute recipes/pr-reviewer.yaml with pr_url=https://github.com/org/repo/pull/123"
+#
+# Thorough review:
+#   amplifier run "execute recipes/pr-reviewer.yaml with pr_url=... depth=thorough"
+#
+# High severity only:
+#   amplifier run "execute recipes/pr-reviewer.yaml with pr_url=... severity_threshold=high"
+#
+# ============================================================

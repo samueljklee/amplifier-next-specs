@@ -1,0 +1,357 @@
+# Feature Planner Recipe
+# Transform PRD/requirements into implementation plan
+#
+# Priority: P1 (High Value)
+# Replaces: scenario-tools/feature-planner.md (Python implementation)
+#
+# This recipe demonstrates:
+# - Multi-stage refinement (analyze → design → plan → validate)
+# - Mode-switching within zen-architect agent
+# - Iterative improvement based on critique
+
+name: "feature-planner"
+description: "Transform product requirements into detailed implementation plans with architecture design"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["planning", "architecture", "prd", "implementation"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 30
+
+context:
+  # Input (at least one required)
+  prd_path: ""              # Path to PRD document
+  requirements: ""          # Free-text requirements if no PRD
+  jira_epic: ""             # JIRA epic key to pull requirements from
+
+  # Configuration
+  target_timeline: ""       # e.g., "2 weeks", "Q1 2025"
+  team_size: 3              # Number of engineers
+  tech_stack: ""            # e.g., "Python, FastAPI, PostgreSQL"
+  constraints: ""           # Any known constraints
+
+steps:
+  # ============================================================
+  # Stage 1: Gather and Parse Requirements
+  # ============================================================
+  - id: "gather-requirements"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather and parse requirements from available sources:
+
+      PRD Path: {{prd_path}}
+      Free-text requirements: {{requirements}}
+      JIRA Epic: {{jira_epic}}
+
+      Extract:
+      1. **User Stories**: As a [user], I want [feature], so that [benefit]
+      2. **Acceptance Criteria**: Specific, testable conditions
+      3. **Non-functional Requirements**: Performance, security, scalability
+      4. **Constraints**: Technical, timeline, resource limitations
+      5. **Dependencies**: External systems, other features, teams
+      6. **Success Metrics**: How we'll measure success
+
+      Return structured requirements object with all extracted information.
+    output: "requirements_parsed"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Analyze Codebase Context
+  # ============================================================
+  - id: "analyze-codebase"
+    agent: "foundation:explorer"
+    prompt: |
+      Analyze the existing codebase to understand:
+
+      1. **Architecture**: Current patterns, layer structure
+      2. **Related Code**: Existing features similar to requirements
+      3. **Integration Points**: Where new feature will connect
+      4. **Technical Debt**: Existing issues that might affect implementation
+      5. **Testing Patterns**: How similar features are tested
+
+      Tech stack hint: {{tech_stack}}
+
+      Return:
+      - architecture_summary: current system design
+      - related_modules: [{path, purpose, relevance}]
+      - integration_points: [{location, type, complexity}]
+      - tech_debt_risks: [{issue, impact, mitigation}]
+      - testing_patterns: how to test this type of feature
+    output: "codebase_analysis"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Design Architecture
+  # ============================================================
+  - id: "design-architecture"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Design the architecture for this feature.
+
+      ## Requirements
+      {{requirements_parsed}}
+
+      ## Codebase Context
+      {{codebase_analysis}}
+
+      ## Constraints
+      - Timeline: {{target_timeline}}
+      - Team size: {{team_size}} engineers
+      - Tech stack: {{tech_stack}}
+      - Additional: {{constraints}}
+
+      ## Design Task
+
+      Create architecture design including:
+
+      1. **High-Level Design**
+         - Component diagram (text description)
+         - Data flow
+         - Key abstractions
+
+      2. **API Design** (if applicable)
+         - Endpoints with request/response
+         - Authentication/authorization
+         - Error handling
+
+      3. **Data Model**
+         - New entities/tables
+         - Relationships
+         - Migration strategy
+
+      4. **Integration Design**
+         - How it connects to existing code
+         - New dependencies
+         - Backward compatibility
+
+      5. **Technical Decisions**
+         - Key choices and rationale
+         - Alternatives considered
+         - Trade-offs accepted
+
+      Follow ruthless simplicity - minimal viable architecture.
+    output: "architecture_design"
+    timeout: 360
+
+  # ============================================================
+  # Stage 4: Critique Architecture
+  # ============================================================
+  - id: "critique-architecture"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Critically review this architecture design.
+
+      ## Design
+      {{architecture_design}}
+
+      ## Original Requirements
+      {{requirements_parsed}}
+
+      ## Review Criteria
+
+      1. **Completeness**: Does it address all requirements?
+      2. **Simplicity**: Is it as simple as possible? Over-engineered?
+      3. **Scalability**: Will it handle expected load?
+      4. **Maintainability**: Easy to understand and modify?
+      5. **Testability**: Can it be effectively tested?
+      6. **Security**: Any obvious vulnerabilities?
+      7. **Philosophy Alignment**: Does it follow our design principles?
+
+      For each issue found:
+      - severity: critical | high | medium | low
+      - category: completeness | simplicity | scalability | etc.
+      - description: what's wrong
+      - suggestion: how to fix
+
+      Also note what's done well.
+    output: "architecture_critique"
+    timeout: 180
+
+  # ============================================================
+  # Stage 5: Refine Architecture (if needed)
+  # ============================================================
+  - id: "refine-architecture"
+    condition: "{{architecture_critique.has_critical_issues}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Refine architecture based on critique.
+
+      ## Original Design
+      {{architecture_design}}
+
+      ## Critique
+      {{architecture_critique}}
+
+      Address all critical and high severity issues.
+      Maintain simplicity - don't add complexity to fix issues.
+
+      Return refined architecture design.
+    output: "architecture_refined"
+    on_error: "continue"
+
+  # ============================================================
+  # Stage 6: Break Down into Tasks
+  # ============================================================
+  - id: "create-task-breakdown"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Break down the architecture into implementable tasks.
+
+      ## Architecture
+      {{architecture_design}}
+      {{architecture_refined}}
+
+      ## Constraints
+      - Timeline: {{target_timeline}}
+      - Team size: {{team_size}} engineers
+
+      ## Task Breakdown Rules
+
+      1. Each task should be completable in 1-3 days
+      2. Tasks should be independently testable
+      3. Clear dependencies between tasks
+      4. Include setup, implementation, testing, and documentation tasks
+
+      ## Output Structure
+
+      For each task:
+      - id: T001, T002, etc.
+      - title: short description
+      - description: detailed what/how
+      - estimated_hours: number
+      - dependencies: [task_ids]
+      - skills_required: [backend, frontend, database, etc.]
+      - acceptance_criteria: how to know it's done
+      - risks: potential blockers
+
+      Group tasks into:
+      - Phase 1: Foundation (must do first)
+      - Phase 2: Core Implementation
+      - Phase 3: Polish and Integration
+      - Phase 4: Testing and Documentation
+    output: "task_breakdown"
+    timeout: 300
+
+  # ============================================================
+  # Stage 7: Create Timeline
+  # ============================================================
+  - id: "create-timeline"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Create implementation timeline from task breakdown.
+
+      ## Tasks
+      {{task_breakdown}}
+
+      ## Resources
+      - Team size: {{team_size}} engineers
+      - Target: {{target_timeline}}
+
+      ## Timeline Rules
+
+      1. Respect task dependencies
+      2. Don't overload any engineer
+      3. Include buffer for unknowns (20%)
+      4. Identify critical path
+      5. Mark milestones
+
+      ## Output
+
+      Create:
+      - week_by_week: [{week, tasks, milestone, risks}]
+      - critical_path: [task_ids] - longest dependency chain
+      - parallel_tracks: which tasks can run simultaneously
+      - total_estimate: {min_weeks, expected_weeks, max_weeks}
+      - risk_assessment: what could delay us
+    output: "timeline"
+    timeout: 180
+
+  # ============================================================
+  # Stage 8: Generate Implementation Plan Document
+  # ============================================================
+  - id: "generate-plan-document"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate comprehensive implementation plan document.
+
+      ## Inputs
+      - Requirements: {{requirements_parsed}}
+      - Architecture: {{architecture_design}} {{architecture_refined}}
+      - Tasks: {{task_breakdown}}
+      - Timeline: {{timeline}}
+
+      ## Document Structure
+
+      # Implementation Plan: [Feature Name]
+
+      ## Executive Summary
+      - What we're building (1 paragraph)
+      - Timeline and resources
+      - Key risks and mitigations
+
+      ## Requirements Summary
+      - User stories (prioritized)
+      - Success metrics
+
+      ## Architecture
+      - High-level design
+      - Key technical decisions
+      - Data model changes
+      - API changes
+
+      ## Implementation Phases
+
+      ### Phase 1: Foundation
+      (Tasks, timeline, deliverables)
+
+      ### Phase 2: Core Implementation
+      (Tasks, timeline, deliverables)
+
+      ### Phase 3: Polish
+      (Tasks, timeline, deliverables)
+
+      ### Phase 4: Testing & Docs
+      (Tasks, timeline, deliverables)
+
+      ## Timeline
+      - Week-by-week breakdown
+      - Milestones
+      - Critical path
+
+      ## Risks and Mitigations
+      - Risk table with likelihood, impact, mitigation
+
+      ## Open Questions
+      - Decisions needed before starting
+      - Stakeholder input required
+
+      ## Appendix
+      - Detailed task list
+      - API specifications
+      - Data model diagrams (text)
+    output: "implementation_plan"
+    timeout: 300
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# From PRD file:
+#   amplifier run "execute recipes/feature-planner.yaml with prd_path=docs/prd-auth-v2.md"
+#
+# From JIRA epic:
+#   amplifier run "execute recipes/feature-planner.yaml with jira_epic=PROJ-123"
+#
+# From free-text:
+#   amplifier run "execute recipes/feature-planner.yaml with requirements='Add SSO support for enterprise customers'"
+#
+# With constraints:
+#   amplifier run "execute recipes/feature-planner.yaml with prd_path=... target_timeline='3 weeks' team_size=2"
+#
+# ============================================================

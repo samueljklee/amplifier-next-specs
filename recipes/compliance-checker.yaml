@@ -1,0 +1,493 @@
+# Compliance Checker Recipe
+# SOC2/GDPR/HIPAA compliance scanning
+#
+# Priority: P2 (Enhancement)
+#
+# This recipe demonstrates:
+# - Policy-based rules engine
+# - Parallel audits across compliance frameworks
+# - Evidence collection for auditors
+
+name: "compliance-checker"
+description: "Scan codebase and configurations for compliance with SOC2, GDPR, HIPAA, and custom policies"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["compliance", "security", "audit", "governance"]
+
+recursion:
+  max_depth: 4
+  max_total_steps: 80
+
+context:
+  # Compliance frameworks to check
+  check_soc2: true
+  check_gdpr: true
+  check_hipaa: false
+  check_pci: false
+  custom_policies: []            # Paths to custom policy files
+
+  # Scope
+  scan_paths: ["."]
+  exclude_paths: ["node_modules", ".venv", "dist", "test"]
+
+  # Configuration
+  severity_threshold: "medium"   # low | medium | high | critical
+  generate_evidence: true        # Generate evidence for auditors
+  check_infrastructure: true     # Check IaC (Terraform, etc.)
+
+steps:
+  # ============================================================
+  # Stage 1: Discover Assets
+  # ============================================================
+  - id: "discover-assets"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover all assets that need compliance checking.
+
+      ## Scan Paths: {{scan_paths}}
+      ## Exclude: {{exclude_paths}}
+
+      ## Asset Discovery
+
+      1. **Code Assets**
+         - Application code
+         - Configuration files
+         - Environment files
+         - Scripts
+
+      2. **Data Assets**
+         - Database schemas
+         - Data models
+         - Storage configurations
+
+      3. **Infrastructure Assets**
+         - Terraform/CloudFormation (if {{check_infrastructure}})
+         - Kubernetes configs
+         - Docker files
+         - CI/CD configs
+
+      4. **Documentation**
+         - Security policies
+         - Privacy policies
+         - Data handling docs
+
+      Return:
+      - code_assets: [{path, type, data_handling}]
+      - data_assets: [{path, type, pii_likely, sensitive_likely}]
+      - infrastructure_assets: [{path, type, service}]
+      - documentation: [{path, type, covers}]
+      - total_assets: count
+    output: "discovered_assets"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: SOC2 Compliance Check
+  # ============================================================
+  - id: "check-soc2"
+    condition: "{{check_soc2}} == 'true'"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Check SOC2 compliance requirements.
+
+      ## Assets: {{discovered_assets}}
+
+      ## SOC2 Trust Service Criteria
+
+      ### Security (Common Criteria)
+      - CC6.1: Logical access security
+      - CC6.2: Physical access security (N/A for code)
+      - CC6.3: System boundaries
+      - CC6.6: System operations
+      - CC6.7: Change management
+      - CC6.8: Risk mitigation
+
+      ### Availability
+      - A1.1: Capacity planning
+      - A1.2: Backup and recovery
+
+      ### Processing Integrity
+      - PI1.1: Data processing accuracy
+
+      ### Confidentiality
+      - C1.1: Confidential information
+      - C1.2: Disposal of confidential information
+
+      ### Privacy (if applicable)
+      - P1-P8: Privacy principles
+
+      ## Checks to Perform
+
+      1. **Access Control**
+         - Authentication mechanisms
+         - Authorization checks
+         - Session management
+         - Password policies
+
+      2. **Logging & Monitoring**
+         - Audit logging
+         - Security events
+         - Access logs
+
+      3. **Encryption**
+         - Data at rest
+         - Data in transit
+         - Key management
+
+      4. **Change Management**
+         - Version control
+         - Code review requirements
+         - Deployment procedures
+
+      Return:
+      - findings: [{criterion, control, status, evidence, gap, remediation}]
+      - by_status: {compliant: [], non_compliant: [], partial: [], not_applicable: []}
+      - critical_gaps: [highest priority issues]
+      - compliance_score: percentage
+    output: "soc2_results"
+    timeout: 400
+
+  # ============================================================
+  # Stage 3: GDPR Compliance Check
+  # ============================================================
+  - id: "check-gdpr"
+    condition: "{{check_gdpr}} == 'true'"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Check GDPR compliance requirements.
+
+      ## Assets: {{discovered_assets}}
+
+      ## GDPR Articles to Check
+
+      ### Lawfulness & Consent (Art. 6, 7)
+      - Consent collection mechanisms
+      - Legal basis documentation
+
+      ### Data Subject Rights (Art. 15-22)
+      - Right to access implementation
+      - Right to erasure (delete functionality)
+      - Right to portability (export functionality)
+      - Right to rectification (edit functionality)
+
+      ### Data Protection (Art. 25, 32)
+      - Privacy by design
+      - Encryption
+      - Pseudonymization
+      - Access controls
+
+      ### Breach Notification (Art. 33, 34)
+      - Detection mechanisms
+      - Notification procedures
+
+      ### Records & DPO (Art. 30, 37)
+      - Processing records
+      - DPO designation (organizational)
+
+      ## Code Checks
+
+      1. **PII Detection**
+         - Personal data fields
+         - Sensitive data fields
+         - Processing locations
+
+      2. **Data Handling**
+         - Collection points
+         - Storage locations
+         - Third-party transfers
+         - Retention policies
+
+      3. **User Rights Implementation**
+         - Delete user data functionality
+         - Export user data functionality
+         - Consent management
+
+      Return:
+      - findings: [{article, requirement, status, evidence, gap, remediation}]
+      - pii_locations: [{file, fields, risk_level}]
+      - rights_implementation: {access: status, erasure: status, portability: status}
+      - data_flows: [{source, destination, data_type, legal_basis}]
+      - compliance_score: percentage
+    output: "gdpr_results"
+    timeout: 400
+
+  # ============================================================
+  # Stage 4: HIPAA Compliance Check
+  # ============================================================
+  - id: "check-hipaa"
+    condition: "{{check_hipaa}} == 'true'"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Check HIPAA compliance requirements.
+
+      ## Assets: {{discovered_assets}}
+
+      ## HIPAA Rules
+
+      ### Privacy Rule
+      - PHI identification
+      - Minimum necessary standard
+      - Authorization requirements
+
+      ### Security Rule
+      - Administrative safeguards
+      - Physical safeguards
+      - Technical safeguards
+
+      ### Breach Notification Rule
+      - Breach detection
+      - Notification procedures
+
+      ## Technical Safeguards Checks
+
+      1. **Access Control (164.312(a)(1))**
+         - Unique user identification
+         - Emergency access procedure
+         - Automatic logoff
+         - Encryption/decryption
+
+      2. **Audit Controls (164.312(b))**
+         - Activity logging
+         - Log review mechanisms
+
+      3. **Integrity Controls (164.312(c)(1))**
+         - Data integrity verification
+         - Transmission security
+
+      4. **Transmission Security (164.312(e)(1))**
+         - Encryption in transit
+         - Integrity controls
+
+      Return:
+      - findings: [{rule, safeguard, status, evidence, gap, remediation}]
+      - phi_locations: [{file, fields, risk_level}]
+      - encryption_status: {at_rest: boolean, in_transit: boolean}
+      - audit_logging: {implemented: boolean, gaps: []}
+      - compliance_score: percentage
+    output: "hipaa_results"
+    timeout: 400
+
+  # ============================================================
+  # Stage 5: PCI-DSS Compliance Check
+  # ============================================================
+  - id: "check-pci"
+    condition: "{{check_pci}} == 'true'"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Check PCI-DSS compliance requirements.
+
+      ## Assets: {{discovered_assets}}
+
+      ## PCI-DSS Requirements
+
+      ### Build and Maintain Secure Network
+      - Req 1: Firewall configuration
+      - Req 2: No vendor defaults
+
+      ### Protect Cardholder Data
+      - Req 3: Protect stored data
+      - Req 4: Encrypt transmission
+
+      ### Maintain Vulnerability Management
+      - Req 5: Antivirus
+      - Req 6: Secure development
+
+      ### Implement Strong Access Control
+      - Req 7: Restrict access
+      - Req 8: Unique IDs
+      - Req 9: Physical access
+
+      ### Monitor and Test Networks
+      - Req 10: Track access
+      - Req 11: Test security
+
+      ### Maintain Security Policy
+      - Req 12: Security policy
+
+      ## Code Checks
+
+      1. **Cardholder Data**
+         - PAN storage detection
+         - CVV storage (prohibited)
+         - Encryption verification
+
+      2. **Secure Development**
+         - Input validation
+         - Output encoding
+         - Secure coding practices
+
+      Return:
+      - findings: [{requirement, status, evidence, gap, remediation}]
+      - cardholder_data: [{file, type, encrypted, compliant}]
+      - secure_dev_practices: [{practice, implemented, evidence}]
+      - compliance_score: percentage
+    output: "pci_results"
+    timeout: 400
+
+  # ============================================================
+  # Stage 6: Custom Policy Check
+  # ============================================================
+  - id: "check-custom"
+    condition: "{{custom_policies}} != '[]'"
+    foreach: "{{custom_policies}}"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Check custom policy compliance.
+
+      ## Policy File: {{item}}
+      ## Assets: {{discovered_assets}}
+
+      ## Tasks
+
+      1. Load and parse policy file
+      2. Identify relevant checks
+      3. Execute each check against codebase
+      4. Document findings
+
+      Return:
+      - policy_name: string
+      - findings: [{rule, status, evidence, gap}]
+      - compliance_score: percentage
+    output: "custom_results"
+    timeout: 240
+
+  # ============================================================
+  # Stage 7: Generate Evidence Package
+  # ============================================================
+  - id: "generate-evidence"
+    condition: "{{generate_evidence}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate evidence package for auditors.
+
+      ## All Results
+      - SOC2: {{soc2_results}}
+      - GDPR: {{gdpr_results}}
+      - HIPAA: {{hipaa_results}}
+      - PCI: {{pci_results}}
+      - Custom: {{custom_results}}
+
+      ## Evidence Package Structure
+
+      For each compliance framework:
+
+      ### 1. Control Matrix
+      - Control ID
+      - Control description
+      - Implementation status
+      - Evidence location
+      - Test results
+
+      ### 2. Evidence Documents
+      - Screenshots/logs (references)
+      - Code snippets showing implementation
+      - Configuration extracts
+      - Policy documents
+
+      ### 3. Gap Analysis
+      - Non-compliant items
+      - Remediation plans
+      - Timeline estimates
+
+      ### 4. Testing Summary
+      - Tests performed
+      - Test results
+      - Test date
+
+      Return:
+      - evidence_package: {control_matrices: [], evidence_docs: [], gap_analysis: []}
+      - auditor_summary: executive summary for auditors
+      - evidence_locations: [{control, evidence_type, location}]
+    output: "evidence_package"
+    timeout: 300
+
+  # ============================================================
+  # Stage 8: Generate Compliance Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive compliance report.
+
+      ## All Results
+      - Assets: {{discovered_assets}}
+      - SOC2: {{soc2_results}}
+      - GDPR: {{gdpr_results}}
+      - HIPAA: {{hipaa_results}}
+      - PCI: {{pci_results}}
+      - Custom: {{custom_results}}
+      - Evidence: {{evidence_package}}
+
+      ## Report Structure
+
+      # Compliance Assessment Report
+
+      ## Executive Summary
+      - Frameworks assessed
+      - Overall compliance posture
+      - Critical findings count
+      - Recommended actions
+
+      ## Compliance Dashboard
+
+      | Framework | Score | Critical | High | Medium | Low |
+      |-----------|-------|----------|------|--------|-----|
+      | SOC2      | X%    | N        | N    | N      | N   |
+      | GDPR      | X%    | N        | N    | N      | N   |
+      | ...       | ...   | ...      | ...  | ...    | ... |
+
+      ## Detailed Findings
+
+      ### SOC2 Findings
+      (By criterion, with severity and remediation)
+
+      ### GDPR Findings
+      (By article, with severity and remediation)
+
+      ### [Other frameworks]
+
+      ## Risk Assessment
+      - High-risk areas
+      - Immediate action required
+      - Monitoring recommended
+
+      ## Remediation Roadmap
+      - Phase 1: Critical (0-30 days)
+      - Phase 2: High (30-90 days)
+      - Phase 3: Medium (90-180 days)
+
+      ## Appendices
+      - Asset inventory
+      - Evidence package
+      - Control mappings
+
+      Return:
+      - report: full markdown document
+      - dashboard: {framework: {score, findings_by_severity}}
+      - critical_findings: [must address immediately]
+      - remediation_roadmap: [{phase, items, deadline}]
+    output: "compliance_report"
+    timeout: 300
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Full compliance check:
+#   amplifier run "execute recipes/compliance-checker.yaml"
+#
+# SOC2 only:
+#   amplifier run "execute recipes/compliance-checker.yaml with check_gdpr=false check_hipaa=false"
+#
+# Healthcare (HIPAA):
+#   amplifier run "execute recipes/compliance-checker.yaml with check_hipaa=true check_pci=false"
+#
+# Finance (PCI-DSS):
+#   amplifier run "execute recipes/compliance-checker.yaml with check_pci=true"
+#
+# With custom policies:
+#   amplifier run "execute recipes/compliance-checker.yaml with custom_policies='[\"policies/internal.yaml\"]'"
+#
+# Critical only:
+#   amplifier run "execute recipes/compliance-checker.yaml with severity_threshold='critical'"
+#
+# ============================================================

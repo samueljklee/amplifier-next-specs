@@ -1,0 +1,484 @@
+# Root Cause Analyzer Recipe
+# Deep dive into production issues with multi-hypothesis diagnosis
+#
+# Priority: P1 (High Value)
+#
+# This recipe demonstrates:
+# - Multi-hypothesis reasoning
+# - Evidence gathering and weighting
+# - Timeline reconstruction
+
+name: "root-cause-analyzer"
+description: "Deep dive into production issues with systematic hypothesis testing and evidence correlation"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["debugging", "incident", "root-cause", "diagnosis"]
+
+recursion:
+  max_depth: 5
+  max_total_steps: 100
+
+context:
+  # Problem description
+  issue_description: ""          # What's happening
+  affected_service: ""           # Which service/component
+  start_time: ""                 # When it started (ISO timestamp)
+  severity: "high"               # critical | high | medium | low
+
+  # Data sources
+  logs_available: true
+  metrics_available: true
+  traces_available: false
+
+  # Analysis depth
+  lookback_hours: 24
+  max_hypotheses: 5
+  evidence_threshold: 0.7        # Confidence threshold for conclusions
+
+steps:
+  # ============================================================
+  # Stage 1: Problem Characterization
+  # ============================================================
+  - id: "characterize-problem"
+    agent: "developer-expertise:bug-hunter"
+    prompt: |
+      Characterize the reported problem.
+
+      ## Issue
+      Description: {{issue_description}}
+      Service: {{affected_service}}
+      Started: {{start_time}}
+      Severity: {{severity}}
+
+      ## Characterization Tasks
+
+      1. **Symptom Analysis**
+         - What exactly is failing?
+         - Error messages/codes
+         - User-visible impact
+         - Frequency (constant, intermittent, pattern)
+
+      2. **Scope Assessment**
+         - Which users affected?
+         - Which features impacted?
+         - Geographic distribution?
+         - Scale (% of requests)
+
+      3. **Temporal Analysis**
+         - Exact start time (if determinable)
+         - Any preceding events?
+         - Pattern over time?
+
+      4. **Initial Classification**
+         - Infrastructure issue?
+         - Application bug?
+         - External dependency?
+         - Data issue?
+         - Configuration problem?
+
+      Return:
+      - symptoms: [{symptom, frequency, severity}]
+      - scope: {users_affected, features_impacted, scale_percent}
+      - timeline: {first_occurrence, pattern}
+      - initial_classification: string
+      - key_questions: questions that need answering
+    output: "problem_characterization"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Evidence Gathering (Parallel)
+  # ============================================================
+  - id: "gather-logs"
+    condition: "{{logs_available}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather relevant log evidence.
+
+      ## Problem
+      {{problem_characterization}}
+
+      ## Time Window
+      From: {{start_time}} - {{lookback_hours}} hours
+      To: now
+
+      ## Log Analysis
+
+      1. **Error Logs**
+         - All ERROR and FATAL entries
+         - Exception stack traces
+         - Error codes and messages
+
+      2. **Warning Signals**
+         - Warnings preceding errors
+         - Timeout warnings
+         - Resource warnings
+
+      3. **Pattern Detection**
+         - First occurrence of error pattern
+         - Frequency over time
+         - Correlation with other events
+
+      4. **Contextual Logs**
+         - What was happening before errors
+         - Related service logs
+         - System logs (if accessible)
+
+      Return:
+      - error_patterns: [{pattern, count, first_seen, last_seen, example}]
+      - timeline_events: [{timestamp, event, severity, context}]
+      - anomalies: [{description, confidence}]
+      - raw_evidence: [key log entries]
+    output: "log_evidence"
+    timeout: 300
+
+  - id: "gather-metrics"
+    condition: "{{metrics_available}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather relevant metric evidence.
+
+      ## Problem
+      {{problem_characterization}}
+
+      ## Time Window
+      From: {{start_time}} - {{lookback_hours}} hours
+
+      ## Metrics to Analyze
+
+      1. **Service Metrics**
+         - Error rates
+         - Latency (p50, p95, p99)
+         - Request volume
+         - Success rates
+
+      2. **Infrastructure Metrics**
+         - CPU utilization
+         - Memory usage
+         - Disk I/O
+         - Network throughput
+
+      3. **Dependency Metrics**
+         - Database query times
+         - External API latencies
+         - Cache hit rates
+         - Queue depths
+
+      4. **Anomaly Detection**
+         - Deviations from baseline
+         - Correlation between metrics
+         - Inflection points
+
+      Return:
+      - metric_anomalies: [{metric, normal_value, anomaly_value, timestamp, deviation_percent}]
+      - correlations: [{metric_a, metric_b, correlation_strength}]
+      - inflection_points: [{timestamp, metrics_changed, direction}]
+      - resource_exhaustion: [{resource, current, capacity, risk}]
+    output: "metric_evidence"
+    timeout: 300
+
+  - id: "gather-changes"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather recent changes that might be relevant.
+
+      ## Time Window
+      {{lookback_hours}} hours before {{start_time}}
+
+      ## Change Types to Find
+
+      1. **Code Deployments**
+         - What was deployed
+         - When
+         - What changed (diff summary)
+         - Who deployed
+
+      2. **Configuration Changes**
+         - Feature flag changes
+         - Environment variable updates
+         - Infrastructure config
+
+      3. **Infrastructure Changes**
+         - Scaling events
+         - Node additions/removals
+         - Network changes
+
+      4. **External Changes**
+         - Dependency updates
+         - Third-party service changes
+         - Certificate renewals
+
+      Return:
+      - deployments: [{timestamp, service, version, changes_summary, author}]
+      - config_changes: [{timestamp, setting, old_value, new_value}]
+      - infrastructure_changes: [{timestamp, change, details}]
+      - external_changes: [{timestamp, source, change}]
+      - timeline: chronological list of all changes
+    output: "change_evidence"
+    timeout: 240
+
+  # ============================================================
+  # Stage 3: Generate Hypotheses
+  # ============================================================
+  - id: "generate-hypotheses"
+    agent: "developer-expertise:bug-hunter"
+    prompt: |
+      Generate hypotheses for the root cause.
+
+      ## Problem
+      {{problem_characterization}}
+
+      ## Evidence
+      - Logs: {{log_evidence}}
+      - Metrics: {{metric_evidence}}
+      - Changes: {{change_evidence}}
+
+      ## Hypothesis Generation
+
+      Generate up to {{max_hypotheses}} distinct hypotheses:
+
+      For each hypothesis:
+
+      1. **Statement**: Clear statement of what might be the cause
+
+      2. **Category**:
+         - deployment: Recent code change caused it
+         - configuration: Config change caused it
+         - resource: Resource exhaustion
+         - dependency: External service issue
+         - data: Data corruption or anomaly
+         - infrastructure: Hardware/network issue
+         - load: Traffic spike overwhelmed system
+
+      3. **Supporting Evidence**: What evidence supports this
+
+      4. **Contradicting Evidence**: What evidence argues against
+
+      5. **Initial Confidence**: 0-100 based on evidence
+
+      6. **Validation Steps**: How to confirm or rule out
+
+      Return:
+      - hypotheses: [{id, statement, category, supporting, contradicting, confidence, validation_steps}]
+      - ranked_by_confidence: [hypothesis ids]
+      - key_unknowns: what additional info would help
+    output: "hypotheses"
+    timeout: 300
+
+  # ============================================================
+  # Stage 4: Test Hypotheses
+  # ============================================================
+  - id: "test-hypotheses"
+    foreach: "{{hypotheses.ranked_by_confidence}}"
+    agent: "developer-expertise:bug-hunter"
+    prompt: |
+      Test hypothesis: {{item}}
+
+      ## Hypothesis Details
+      Find in: {{hypotheses.hypotheses}}
+
+      ## All Evidence
+      - Logs: {{log_evidence}}
+      - Metrics: {{metric_evidence}}
+      - Changes: {{change_evidence}}
+
+      ## Validation Tasks
+
+      Execute the validation steps for this hypothesis:
+
+      1. **Gather Additional Evidence**
+         - Specific queries/checks needed
+         - Compare with baseline/normal
+
+      2. **Timeline Correlation**
+         - Does timing match?
+         - Cause precedes effect?
+
+      3. **Reproduction Analysis**
+         - Can we reproduce?
+         - What conditions trigger it?
+
+      4. **Impact Correlation**
+         - Does scope match hypothesis?
+         - Affected users align?
+
+      5. **Update Confidence**
+         - New supporting evidence
+         - New contradicting evidence
+         - Final confidence score
+
+      Return:
+      - hypothesis_id: string
+      - validation_results: [{check, result, significance}]
+      - new_evidence: [{type, data, supports_hypothesis}]
+      - updated_confidence: 0-100
+      - status: confirmed | refuted | inconclusive
+    output: "hypothesis_tests"
+    timeout: 240
+
+  # ============================================================
+  # Stage 5: Determine Root Cause
+  # ============================================================
+  - id: "determine-root-cause"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Determine the most likely root cause.
+
+      ## All Hypotheses and Test Results
+      {{hypothesis_tests}}
+
+      ## Evidence Summary
+      - Problem: {{problem_characterization}}
+      - Logs: {{log_evidence}}
+      - Metrics: {{metric_evidence}}
+      - Changes: {{change_evidence}}
+
+      ## Analysis
+
+      1. **Rank Hypotheses**
+         - By final confidence score
+         - Consider evidence quality
+         - Weight by logical consistency
+
+      2. **Identify Root Cause**
+         - Hypothesis with highest confidence above {{evidence_threshold}}
+         - Or acknowledge uncertainty if none qualify
+
+      3. **Causation Chain**
+         - What triggered the issue
+         - How it propagated
+         - Why it manifested as observed symptoms
+
+      4. **Contributing Factors**
+         - Secondary causes
+         - Conditions that enabled the issue
+         - Why it wasn't caught earlier
+
+      Return:
+      - root_cause: {hypothesis_id, statement, confidence}
+      - causation_chain: [{step, event, effect}]
+      - contributing_factors: [{factor, contribution}]
+      - uncertainty: what we're still not sure about
+      - alternative_causes: other possibilities if confidence < threshold
+    output: "root_cause_determination"
+    timeout: 240
+
+  # ============================================================
+  # Stage 6: Generate Recommendations
+  # ============================================================
+  - id: "generate-recommendations"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate recommendations based on root cause analysis.
+
+      ## Root Cause
+      {{root_cause_determination}}
+
+      ## Problem
+      {{problem_characterization}}
+
+      ## Recommendations
+
+      ### 1. Immediate Actions
+      - How to resolve the current issue
+      - Mitigation steps
+      - Rollback if needed
+
+      ### 2. Short-term Fixes
+      - Patches to prevent recurrence
+      - Monitoring improvements
+      - Alert additions
+
+      ### 3. Long-term Prevention
+      - Architectural changes
+      - Process improvements
+      - Testing additions
+
+      ### 4. Detection Improvements
+      - Earlier warning signs
+      - Better monitoring
+      - Automated detection
+
+      Return:
+      - immediate_actions: [{action, owner, urgency, risk}]
+      - short_term_fixes: [{fix, effort, impact}]
+      - long_term_prevention: [{change, rationale, priority}]
+      - detection_improvements: [{improvement, implementation}]
+    output: "recommendations"
+    timeout: 180
+
+  # ============================================================
+  # Stage 7: Generate RCA Report
+  # ============================================================
+  - id: "generate-rca-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive Root Cause Analysis report.
+
+      ## All Data
+      - Problem: {{problem_characterization}}
+      - Evidence: Logs={{log_evidence}}, Metrics={{metric_evidence}}, Changes={{change_evidence}}
+      - Hypotheses: {{hypotheses}}
+      - Testing: {{hypothesis_tests}}
+      - Root Cause: {{root_cause_determination}}
+      - Recommendations: {{recommendations}}
+
+      ## Report Structure
+
+      # Root Cause Analysis: {{issue_description}}
+
+      ## Executive Summary
+      - What happened (1-2 sentences)
+      - Root cause (1 sentence)
+      - Current status
+      - Key action items
+
+      ## Timeline
+      - Chronological events leading to and during incident
+      - Key decision points
+
+      ## Impact Assessment
+      - Users affected
+      - Duration
+      - Business impact
+
+      ## Root Cause
+      - Technical explanation
+      - Causation chain
+      - Why it wasn't prevented
+
+      ## Evidence
+      - Key findings from logs, metrics, changes
+      - Hypothesis testing results
+
+      ## Recommendations
+      - Immediate, short-term, long-term
+      - Ownership and timelines
+
+      ## Lessons Learned
+      - What went well
+      - What could improve
+      - Action items for future prevention
+
+      Return:
+      - report: full markdown document
+      - summary: one-paragraph summary
+      - action_items: [{item, owner, deadline, priority}]
+    output: "rca_report"
+    timeout: 240
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Investigate production issue:
+#   amplifier run "execute recipes/root-cause-analyzer.yaml with issue_description='API returning 500 errors' affected_service='payment-api' start_time='2024-01-15T10:30:00Z'"
+#
+# Critical incident with short lookback:
+#   amplifier run "execute recipes/root-cause-analyzer.yaml with issue_description='Database connection failures' severity='critical' lookback_hours=4"
+#
+# Without tracing:
+#   amplifier run "execute recipes/root-cause-analyzer.yaml with traces_available=false ..."
+#
+# ============================================================

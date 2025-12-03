@@ -1,0 +1,407 @@
+# Release Manager Recipe
+# Coordinate release process: changelog, notes, tagging, notifications
+#
+# Priority: P1 (High Value)
+#
+# This recipe demonstrates:
+# - foreach over dynamic commit lists
+# - Parallel stakeholder notifications
+# - Multi-stage release workflow with gates
+
+name: "release-manager"
+description: "Coordinate release process from changelog generation to stakeholder notification"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["release", "changelog", "deployment", "notifications"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 50
+
+context:
+  # Release configuration
+  version: ""                    # Version to release (e.g., "2.1.0")
+  release_type: "minor"          # major | minor | patch | prerelease
+  base_branch: "main"            # Branch to release from
+  previous_tag: ""               # Previous release tag (auto-detected if empty)
+
+  # Output configuration
+  changelog_format: "keepachangelog"  # keepachangelog | conventional | github
+  include_contributors: true
+  include_stats: true
+
+  # Notifications
+  notify_slack: true
+  slack_channel: "#releases"
+  notify_email: false
+  email_recipients: []
+  create_github_release: true
+
+  # Gates
+  require_passing_ci: true
+  require_changelog_review: true
+
+steps:
+  # ============================================================
+  # Stage 1: Pre-Release Validation
+  # ============================================================
+  - id: "validate-prerequisites"
+    agent: "foundation:explorer"
+    prompt: |
+      Validate release prerequisites for version {{version}}.
+
+      ## Checks
+
+      1. **Branch Status**
+         - Is {{base_branch}} up to date?
+         - Any uncommitted changes?
+         - Any pending PRs that should be included?
+
+      2. **Version Validation**
+         - Is {{version}} valid semver?
+         - Does it follow from previous version?
+         - Any conflicts with existing tags?
+
+      3. **CI Status** (if {{require_passing_ci}})
+         - Are all CI checks passing?
+         - Any flaky tests to address?
+
+      4. **Previous Tag Detection**
+         - Find previous release tag if not specified
+         - Calculate commits since that tag
+
+      Return:
+      - ready: boolean
+      - blockers: [{issue, severity, resolution}]
+      - previous_tag: detected or provided
+      - commits_since_last: count
+      - ci_status: passing | failing | unknown
+    output: "prerequisites"
+    timeout: 120
+
+  # ============================================================
+  # Stage 2: Gather Commits and Categorize
+  # ============================================================
+  - id: "gather-commits"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather all commits since {{prerequisites.previous_tag}} on {{base_branch}}.
+
+      ## For Each Commit, Extract
+
+      1. **Metadata**
+         - SHA (short and full)
+         - Author name and email
+         - Commit date
+         - Message (subject and body)
+
+      2. **Conventional Commit Parsing** (if applicable)
+         - Type: feat, fix, docs, style, refactor, test, chore
+         - Scope: component affected
+         - Breaking: boolean (! or BREAKING CHANGE)
+
+      3. **Linked Issues**
+         - JIRA tickets (e.g., PROJ-123)
+         - GitHub issues (#123)
+         - PR references
+
+      Return:
+      - commits: [{sha, author, date, message, type, scope, breaking, issues}]
+      - by_type: {feat: [], fix: [], ...}
+      - breaking_changes: [{commit, description}]
+      - contributors: [{name, email, commit_count}]
+    output: "commit_data"
+    timeout: 180
+
+  # ============================================================
+  # Stage 3: Generate Changelog
+  # ============================================================
+  - id: "generate-changelog"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate changelog for version {{version}}.
+
+      ## Commit Data
+      {{commit_data}}
+
+      ## Format: {{changelog_format}}
+
+      ## Changelog Structure
+
+      ### Keep A Changelog Format
+      ```
+      ## [{{version}}] - YYYY-MM-DD
+
+      ### Added
+      - New features (feat commits)
+
+      ### Changed
+      - Changes in existing functionality
+
+      ### Deprecated
+      - Soon-to-be removed features
+
+      ### Removed
+      - Removed features
+
+      ### Fixed
+      - Bug fixes (fix commits)
+
+      ### Security
+      - Security fixes
+      ```
+
+      ## Rules
+
+      1. Group by type (Added, Changed, Fixed, etc.)
+      2. Lead with user-facing changes
+      3. Include breaking changes prominently
+      4. Link to PRs/issues where available
+      5. Credit contributors (if {{include_contributors}})
+      6. Add stats (if {{include_stats}}): files changed, insertions, deletions
+
+      Return:
+      - changelog_entry: formatted markdown for this version
+      - highlights: top 3-5 notable changes
+      - breaking_summary: breaking changes summary (if any)
+    output: "changelog"
+    timeout: 240
+
+  # ============================================================
+  # Stage 4: Generate Release Notes
+  # ============================================================
+  - id: "generate-release-notes"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate user-friendly release notes for {{version}}.
+
+      ## Changelog
+      {{changelog}}
+
+      ## Commit Data
+      {{commit_data}}
+
+      ## Release Notes Structure
+
+      Different from changelog - these are marketing/user-facing:
+
+      ### 1. Headline
+      One-line summary of the most important change
+
+      ### 2. Highlights (3-5 items)
+      - User-facing benefits, not technical details
+      - Include screenshots/demos if applicable
+      - Link to documentation for new features
+
+      ### 3. Breaking Changes (if any)
+      - Clear migration instructions
+      - Before/after examples
+      - Timeline for deprecations
+
+      ### 4. Bug Fixes Summary
+      - Grouped by area affected
+      - User-impact focused
+
+      ### 5. Contributors
+      Thank you section for contributors
+
+      ### 6. Upgrade Instructions
+      - Step-by-step upgrade path
+      - Known issues to watch for
+
+      Return:
+      - release_notes: full markdown document
+      - headline: one-line summary
+      - tweet_summary: 280 character version
+      - slack_summary: formatted for Slack
+    output: "release_notes"
+    timeout: 300
+
+  # ============================================================
+  # Stage 5: Review Gate (if enabled)
+  # ============================================================
+  - id: "changelog-review"
+    condition: "{{require_changelog_review}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Review the generated changelog and release notes.
+
+      ## Changelog
+      {{changelog}}
+
+      ## Release Notes
+      {{release_notes}}
+
+      ## Review Criteria
+
+      1. **Accuracy**: Do descriptions match actual changes?
+      2. **Completeness**: Are all significant changes included?
+      3. **Clarity**: Will users understand what changed?
+      4. **Breaking Changes**: Are migrations clearly documented?
+      5. **Tone**: Professional and helpful?
+
+      Return:
+      - approved: boolean
+      - issues: [{severity, description, suggestion}]
+      - recommended_edits: [{section, current, suggested}]
+    output: "review_result"
+    timeout: 180
+
+  # ============================================================
+  # Stage 6: Create Git Tag and GitHub Release
+  # ============================================================
+  - id: "create-release"
+    condition: "{{create_github_release}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Create the release artifacts.
+
+      ## Version: {{version}}
+      ## Release Notes
+      {{release_notes}}
+
+      ## Actions
+
+      1. **Create Git Tag**
+         - Tag: v{{version}}
+         - Message: Release {{version}}
+         - Sign tag if GPG configured
+
+      2. **Push Tag**
+         - Push to origin
+
+      3. **Create GitHub Release**
+         - Title: v{{version}}
+         - Body: release notes
+         - Mark as latest (unless prerelease)
+         - Attach artifacts if any
+
+      Return:
+      - tag_created: boolean
+      - tag_sha: commit SHA
+      - github_release_url: URL to release
+      - artifacts_attached: [filenames]
+    output: "release_artifacts"
+    timeout: 180
+
+  # ============================================================
+  # Stage 7: Notify Stakeholders (Parallel)
+  # ============================================================
+  - id: "notify-slack"
+    condition: "{{notify_slack}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Send release notification to Slack.
+
+      ## Channel: {{slack_channel}}
+
+      ## Message Format
+
+      ```
+      :rocket: *{{version}} Released!*
+
+      {{release_notes.headline}}
+
+      *Highlights:*
+      {{release_notes.highlights}}
+
+      <{{release_artifacts.github_release_url}}|View Release Notes>
+      ```
+
+      Return:
+      - sent: boolean
+      - message_url: Slack message URL
+    output: "slack_notification"
+    timeout: 60
+
+  - id: "notify-email"
+    condition: "{{notify_email}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Send release notification email.
+
+      ## Recipients: {{email_recipients}}
+
+      ## Email Content
+
+      Subject: [Release] {{version}} is now available
+
+      Body: Professional email format with:
+      - Summary of release
+      - Key highlights
+      - Link to full release notes
+      - Upgrade instructions
+      - Contact for questions
+
+      Return:
+      - sent: boolean
+      - recipients_count: number
+    output: "email_notification"
+    timeout: 120
+
+  # ============================================================
+  # Stage 8: Post-Release Summary
+  # ============================================================
+  - id: "generate-summary"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate release summary report.
+
+      ## Release Data
+      - Version: {{version}}
+      - Type: {{release_type}}
+      - Prerequisites: {{prerequisites}}
+      - Commits: {{commit_data}}
+      - Changelog: {{changelog}}
+      - Release: {{release_artifacts}}
+      - Notifications: Slack={{slack_notification}}, Email={{email_notification}}
+
+      ## Summary Report
+
+      Create a summary including:
+
+      1. **Release Stats**
+         - Version released
+         - Commits included
+         - Contributors
+         - Files changed
+
+      2. **Timeline**
+         - When each step completed
+         - Total release duration
+
+      3. **Notifications Sent**
+         - Channels notified
+         - Recipients reached
+
+      4. **Next Steps**
+         - Monitor for issues
+         - Update documentation
+         - Plan next release
+
+      Return:
+      - summary: formatted report
+      - stats: {commits, contributors, files_changed}
+      - duration_minutes: total time
+    output: "release_summary"
+    timeout: 120
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Basic release:
+#   amplifier run "execute recipes/release-manager.yaml with version='2.1.0'"
+#
+# Major release with all notifications:
+#   amplifier run "execute recipes/release-manager.yaml with version='3.0.0' release_type='major' notify_email=true"
+#
+# Patch release (quick):
+#   amplifier run "execute recipes/release-manager.yaml with version='2.0.5' release_type='patch' require_changelog_review=false"
+#
+# Prerelease:
+#   amplifier run "execute recipes/release-manager.yaml with version='2.1.0-beta.1' release_type='prerelease'"
+#
+# ============================================================

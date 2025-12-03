@@ -1,0 +1,472 @@
+# API Evolution Tracker Recipe
+# Track API changes, suggest versioning, generate migrations
+#
+# Priority: P2 (Enhancement)
+#
+# This recipe demonstrates:
+# - Recipe composition for audit sub-recipes
+# - Temporal analysis across versions
+# - Documentation generation
+
+name: "api-evolution-tracker"
+description: "Track API changes over time, suggest versioning strategies, and generate migration guides"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["api", "versioning", "migration", "documentation"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 60
+
+context:
+  # API source
+  api_type: "rest"               # rest | graphql | grpc | openapi
+  api_paths: ["src/api/", "api/"]
+  openapi_spec: ""               # Path to OpenAPI spec if available
+
+  # History
+  compare_branches: ["main"]     # Branches to compare
+  compare_tags: []               # Tags to compare (e.g., ["v1.0.0", "v2.0.0"])
+  lookback_commits: 100          # Commits to analyze if no tags
+
+  # Versioning
+  current_version: ""            # Current API version
+  versioning_strategy: "auto"    # auto | semver | date | header
+
+  # Output
+  generate_migration_guide: true
+  generate_changelog: true
+  suggest_deprecations: true
+
+steps:
+  # ============================================================
+  # Stage 1: Discover API Surface
+  # ============================================================
+  - id: "discover-api"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Discover the current API surface.
+
+      ## API Type: {{api_type}}
+      ## Paths: {{api_paths}}
+      ## OpenAPI Spec: {{openapi_spec}}
+
+      ## Discovery Tasks
+
+      1. **Endpoints/Operations**
+         - All routes/endpoints
+         - HTTP methods
+         - URL patterns
+
+      2. **Request Schemas**
+         - Parameters (path, query, header, body)
+         - Required vs optional
+         - Types and constraints
+
+      3. **Response Schemas**
+         - Status codes
+         - Response bodies
+         - Error formats
+
+      4. **Authentication**
+         - Auth methods
+         - Required permissions
+         - Scopes
+
+      5. **Documentation**
+         - Inline docs
+         - External docs
+         - Examples
+
+      Return:
+      - endpoints: [{path, method, summary, parameters, responses, auth}]
+      - schemas: [{name, type, properties, required}]
+      - auth_schemes: [{type, details}]
+      - total_endpoints: count
+      - documentation_coverage: percentage
+    output: "current_api"
+    timeout: 240
+
+  # ============================================================
+  # Stage 2: Gather Historical Versions
+  # ============================================================
+  - id: "gather-history"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather historical API versions for comparison.
+
+      ## Branches: {{compare_branches}}
+      ## Tags: {{compare_tags}}
+      ## Lookback: {{lookback_commits}} commits
+
+      ## History Gathering
+
+      1. **Version Points**
+         - Find tagged releases
+         - Find significant commits
+         - Build version timeline
+
+      2. **For Each Version Point**
+         - Checkout/access that version
+         - Extract API surface (same as current)
+         - Note the date and context
+
+      3. **Change Detection**
+         - Diff between consecutive versions
+         - Identify what changed
+
+      Return:
+      - version_points: [{version, date, commit, source}]
+      - api_snapshots: [{version, endpoints, schemas}]
+      - timeline: chronological list of changes
+    output: "api_history"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Analyze API Evolution
+  # ============================================================
+  - id: "analyze-evolution"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze how the API has evolved over time.
+
+      ## Current API
+      {{current_api}}
+
+      ## Historical Versions
+      {{api_history}}
+
+      ## Evolution Analysis
+
+      1. **Change Categorization**
+         For each change between versions:
+         - Addition: New endpoints/fields
+         - Modification: Changed behavior/schema
+         - Deprecation: Marked for removal
+         - Removal: Deleted
+
+      2. **Breaking Change Detection**
+         - Removed endpoints
+         - Removed required fields
+         - Changed field types
+         - New required parameters
+         - Changed URLs/methods
+
+      3. **Evolution Patterns**
+         - Growth rate (endpoints over time)
+         - Churn rate (changes per version)
+         - Deprecation patterns
+         - Consistency trends
+
+      4. **Risk Assessment**
+         - Technical debt accumulation
+         - Breaking change frequency
+         - Documentation lag
+
+      Return:
+      - changes: [{version_from, version_to, type, endpoint, field, breaking, description}]
+      - breaking_changes: [{change, impact, affected_clients}]
+      - evolution_metrics: {growth_rate, churn_rate, breaking_rate}
+      - patterns: [observed patterns]
+      - risk_assessment: {technical_debt, stability, documentation}
+    output: "evolution_analysis"
+    timeout: 300
+
+  # ============================================================
+  # Stage 4: Suggest Versioning Strategy
+  # ============================================================
+  - id: "suggest-versioning"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Suggest optimal versioning strategy.
+
+      ## Current Version: {{current_version}}
+      ## Current Strategy: {{versioning_strategy}}
+      ## Evolution Analysis: {{evolution_analysis}}
+
+      ## Strategy Options
+
+      1. **URL Path Versioning** (/v1/, /v2/)
+         - Pros: Clear, cache-friendly
+         - Cons: URL pollution, resource duplication
+
+      2. **Query Parameter** (?version=1)
+         - Pros: Simple to add
+         - Cons: Not RESTful, cache issues
+
+      3. **Header Versioning** (Accept: application/vnd.api.v1+json)
+         - Pros: Clean URLs
+         - Cons: Harder to test, less visible
+
+      4. **Date-based** (2024-01-01)
+         - Pros: Clear timeline
+         - Cons: Arbitrary dates
+
+      ## Analysis
+
+      Based on:
+      - Breaking change frequency
+      - Client sophistication
+      - Caching requirements
+      - Current implementation
+
+      Return:
+      - recommended_strategy: string
+      - rationale: why this strategy
+      - migration_from_current: steps if changing strategy
+      - version_naming: recommended format
+      - deprecation_policy: recommended policy
+    output: "versioning_strategy"
+    timeout: 180
+
+  # ============================================================
+  # Stage 5: Suggest Deprecations
+  # ============================================================
+  - id: "suggest-deprecations"
+    condition: "{{suggest_deprecations}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Suggest endpoints/fields for deprecation.
+
+      ## Current API
+      {{current_api}}
+
+      ## Evolution Analysis
+      {{evolution_analysis}}
+
+      ## Deprecation Candidates
+
+      1. **Usage-Based**
+         - Endpoints rarely used
+         - Fields never populated
+         - Redundant operations
+
+      2. **Design-Based**
+         - Inconsistent naming
+         - Superseded patterns
+         - Legacy compatibility shims
+
+      3. **Maintenance-Based**
+         - High bug rate
+         - Complex implementation
+         - Security concerns
+
+      ## For Each Candidate
+
+      - What to deprecate
+      - Why deprecate
+      - Alternative for clients
+      - Timeline recommendation
+      - Migration path
+
+      Return:
+      - deprecation_candidates: [{endpoint, reason, alternative, urgency, migration_path}]
+      - immediate_deprecations: should deprecate now
+      - future_deprecations: should deprecate in next version
+      - keep_indefinitely: reasons to keep
+    output: "deprecation_suggestions"
+    timeout: 240
+
+  # ============================================================
+  # Stage 6: Generate Migration Guide
+  # ============================================================
+  - id: "generate-migration"
+    condition: "{{generate_migration_guide}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate migration guides for API consumers.
+
+      ## Evolution Analysis
+      {{evolution_analysis}}
+
+      ## Breaking Changes
+      {{evolution_analysis.breaking_changes}}
+
+      ## Migration Guide Structure
+
+      For each version transition with breaking changes:
+
+      # Migration Guide: v{X} to v{Y}
+
+      ## Overview
+      - Summary of changes
+      - Breaking changes count
+      - Estimated migration effort
+
+      ## Breaking Changes
+
+      ### {Change 1}
+      **What Changed**: Description
+      **Before**:
+      ```
+      example request/response
+      ```
+      **After**:
+      ```
+      example request/response
+      ```
+      **Migration Steps**:
+      1. Step one
+      2. Step two
+
+      ### {Change 2}
+      ...
+
+      ## Non-Breaking Changes
+      - New features you can adopt
+      - Performance improvements
+      - Bug fixes
+
+      ## Deprecation Warnings
+      - What's deprecated
+      - Timeline for removal
+      - Migration path
+
+      ## Testing Your Migration
+      - How to test
+      - Common pitfalls
+      - Rollback procedures
+
+      Return:
+      - migration_guides: [{from_version, to_version, guide_content}]
+      - code_examples: [{change, before, after, language}]
+      - testing_recommendations: [recommendations]
+    output: "migration_guides"
+    timeout: 300
+
+  # ============================================================
+  # Stage 7: Generate API Changelog
+  # ============================================================
+  - id: "generate-changelog"
+    condition: "{{generate_changelog}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate API changelog.
+
+      ## Evolution Analysis
+      {{evolution_analysis}}
+
+      ## Changelog Format
+
+      # API Changelog
+
+      ## [Current Version] - YYYY-MM-DD
+
+      ### Added
+      - New endpoints
+      - New fields
+
+      ### Changed
+      - Modified behavior
+      - Updated schemas
+
+      ### Deprecated
+      - Endpoints/fields marked for removal
+      - Sunset dates
+
+      ### Removed
+      - Deleted endpoints
+      - Removed fields
+
+      ### Fixed
+      - Bug fixes
+      - Security patches
+
+      ### Security
+      - Security-related changes
+
+      ## [Previous Version] - YYYY-MM-DD
+      ...
+
+      Return:
+      - changelog: full markdown document
+      - by_version: [{version, date, changes}]
+      - highlights: notable changes across versions
+    output: "api_changelog"
+    timeout: 180
+
+  # ============================================================
+  # Stage 8: Generate Evolution Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive API evolution report.
+
+      ## All Data
+      - Current API: {{current_api}}
+      - History: {{api_history}}
+      - Evolution: {{evolution_analysis}}
+      - Versioning: {{versioning_strategy}}
+      - Deprecations: {{deprecation_suggestions}}
+      - Migration Guides: {{migration_guides}}
+      - Changelog: {{api_changelog}}
+
+      ## Report Sections
+
+      # API Evolution Report
+
+      ## Executive Summary
+      - API size and growth
+      - Stability assessment
+      - Key recommendations
+
+      ## Current State
+      - Endpoint count
+      - Schema complexity
+      - Documentation coverage
+
+      ## Evolution Metrics
+      - Growth over time
+      - Breaking change rate
+      - Deprecation status
+
+      ## Versioning
+      - Current strategy
+      - Recommendations
+      - Timeline
+
+      ## Health Assessment
+      - Technical debt
+      - Consistency
+      - Client impact
+
+      ## Recommendations
+      - Immediate actions
+      - Short-term improvements
+      - Long-term strategy
+
+      ## Appendices
+      - Full endpoint list
+      - Schema reference
+      - Migration guides
+
+      Return:
+      - report: full markdown document
+      - metrics_dashboard: {endpoints, growth, breaking_rate, coverage}
+      - action_items: [{item, priority, effort}]
+    output: "evolution_report"
+    timeout: 240
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Full analysis:
+#   amplifier run "execute recipes/api-evolution-tracker.yaml"
+#
+# Compare specific versions:
+#   amplifier run "execute recipes/api-evolution-tracker.yaml with compare_tags='[\"v1.0.0\", \"v2.0.0\"]'"
+#
+# GraphQL API:
+#   amplifier run "execute recipes/api-evolution-tracker.yaml with api_type='graphql'"
+#
+# With OpenAPI spec:
+#   amplifier run "execute recipes/api-evolution-tracker.yaml with openapi_spec='openapi.yaml'"
+#
+# Just changelog:
+#   amplifier run "execute recipes/api-evolution-tracker.yaml with generate_migration_guide=false suggest_deprecations=false"
+#
+# ============================================================

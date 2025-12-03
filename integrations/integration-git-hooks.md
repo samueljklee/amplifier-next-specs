@@ -1,0 +1,750 @@
+# integration-git-hooks
+
+> **Priority**: P1 (High Value)
+> **Status**: Draft
+> **Module**: `amplifier-git-hooks`
+
+## Overview
+
+Git hooks integration for automated AI assistance during git workflows: pre-commit review, commit message generation, pre-push validation, and merge request preparation. Zero-friction quality gates powered by Amplifier.
+
+### Value Proposition
+
+| Without | With |
+|---------|------|
+| Manual code review before commit | Automated pre-commit analysis |
+| Writing commit messages manually | AI-generated contextual messages |
+| Forgetting to check before push | Automated pre-push validation |
+| Manual PR description writing | Auto-generated PR descriptions |
+
+---
+
+## Hook Types
+
+### 1. Pre-Commit Hook
+
+Analyze staged changes before commit.
+
+```bash
+# .git/hooks/pre-commit
+#!/bin/bash
+
+# Run Amplifier pre-commit analysis
+amplifier hooks pre-commit
+
+# Exit code determines if commit proceeds
+```
+
+**Analysis includes:**
+- Security vulnerabilities (secrets, injection risks)
+- Code quality issues (complexity, duplication)
+- Style violations (based on project config)
+- Breaking changes detection
+- Test coverage impact
+
+**Output:**
+
+```
+🤖 Amplifier Pre-Commit Analysis
+═══════════════════════════════════════════════════════════════
+
+Analyzing 3 staged files...
+
+✅ src/api/users.ts
+   No issues found
+
+⚠️  src/payments/processor.ts
+   Line 45: Potential SQL injection risk
+   Line 89: Missing error handling for network timeout
+
+   Suggested fixes:
+   1. Use parameterized queries (line 45)
+   2. Add try-catch with timeout handling (line 89)
+
+❌ src/auth/login.ts
+   Line 12: Hardcoded API key detected
+   BLOCKING: Cannot commit secrets
+
+═══════════════════════════════════════════════════════════════
+Summary: 1 blocked, 1 warning, 1 passed
+
+[a]ccept warnings and commit
+[f]ix issues (opens editor)
+[c]ancel commit
+```
+
+### 2. Commit-Msg Hook
+
+Generate or enhance commit messages.
+
+```bash
+# .git/hooks/commit-msg
+#!/bin/bash
+
+# Generate commit message from staged changes
+amplifier hooks commit-msg "$1"
+```
+
+**Modes:**
+
+```bash
+# Mode 1: Generate from scratch (empty message)
+git commit
+# → Amplifier generates message based on diff
+
+# Mode 2: Enhance existing (message provided)
+git commit -m "fix auth"
+# → Amplifier expands: "fix(auth): resolve token expiration handling..."
+
+# Mode 3: Validate only (with --no-enhance flag)
+git commit -m "WIP"
+# → Amplifier warns about non-conventional message
+```
+
+**Generated message format:**
+
+```
+feat(payments): add retry logic for failed transactions
+
+- Implement exponential backoff for Stripe API calls
+- Add configurable max retry attempts (default: 3)
+- Log retry attempts for debugging
+- Update error handling to distinguish retryable errors
+
+Closes #234
+```
+
+### 3. Pre-Push Hook
+
+Validate before pushing to remote.
+
+```bash
+# .git/hooks/pre-push
+#!/bin/bash
+
+# Run Amplifier pre-push validation
+amplifier hooks pre-push "$@"
+```
+
+**Validations:**
+- All tests pass
+- No WIP commits
+- No force-push to protected branches
+- Breaking changes require version bump
+- Documentation updated for API changes
+
+**Output:**
+
+```
+🤖 Amplifier Pre-Push Validation
+═══════════════════════════════════════════════════════════════
+
+Checking 5 commits to push to origin/main...
+
+✅ Tests: All 142 tests passing
+✅ Commits: No WIP or fixup commits
+✅ Branch: Not force-pushing to protected branch
+
+⚠️  Breaking Changes Detected:
+   - Removed `getUserById` from UserService API
+   - Changed return type of `processPayment`
+
+   Recommendations:
+   1. Bump major version (currently 2.3.1 → 3.0.0)
+   2. Update CHANGELOG.md
+   3. Add migration guide
+
+═══════════════════════════════════════════════════════════════
+[p]ush anyway (with warnings)
+[c]ancel push
+```
+
+### 4. Prepare-Commit-Msg Hook
+
+Prepare PR/MR descriptions.
+
+```bash
+# .git/hooks/prepare-commit-msg
+#!/bin/bash
+
+# When creating merge commit or PR
+if [ "$2" = "merge" ]; then
+  amplifier hooks prepare-merge "$1"
+fi
+```
+
+**Generated PR description:**
+
+```markdown
+## Summary
+
+This PR adds retry logic for failed payment transactions to improve
+reliability when the Stripe API experiences intermittent issues.
+
+## Changes
+
+- **src/payments/processor.ts**: Added `RetryStrategy` class with
+  exponential backoff
+- **src/payments/errors.ts**: New `RetryableError` type for
+  distinguishing recoverable failures
+- **tests/payments/**: Added 12 new test cases for retry scenarios
+
+## Testing
+
+- [x] Unit tests for retry logic
+- [x] Integration tests with mock Stripe API
+- [ ] Manual testing in staging environment
+
+## Related
+
+- Closes #234
+- Related to #198 (error handling improvements)
+
+---
+🤖 Generated by Amplifier
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Git Hooks System                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ pre-commit   │  │ commit-msg   │  │ pre-push     │              │
+│  │ (shell)      │  │ (shell)      │  │ (shell)      │              │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘              │
+│         │                 │                 │                       │
+│         └─────────────────┼─────────────────┘                       │
+│                           ▼                                         │
+│                  ┌─────────────────┐                                │
+│                  │ amplifier hooks │                                │
+│                  │ (CLI command)   │                                │
+│                  └────────┬────────┘                                │
+│                           │                                         │
+│         ┌─────────────────┼─────────────────┐                       │
+│         ▼                 ▼                 ▼                       │
+│  ┌────────────┐   ┌────────────┐   ┌────────────┐                  │
+│  │ Git Diff   │   │ Config     │   │ Amplifier  │                  │
+│  │ Analysis   │   │ Loading    │   │ Session    │                  │
+│  └────────────┘   └────────────┘   └────────────┘                  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Installation
+
+### Quick Setup
+
+```bash
+# Initialize hooks in current repository
+amplifier hooks init
+
+# This creates:
+# - .git/hooks/pre-commit
+# - .git/hooks/commit-msg
+# - .git/hooks/pre-push
+# - .git/hooks/prepare-commit-msg
+# - .amplifier/hooks.yaml (configuration)
+```
+
+### Manual Setup
+
+```bash
+# Install individual hooks
+amplifier hooks install pre-commit
+amplifier hooks install commit-msg
+amplifier hooks install pre-push
+```
+
+### With Husky
+
+```json
+// package.json
+{
+  "husky": {
+    "hooks": {
+      "pre-commit": "amplifier hooks pre-commit",
+      "commit-msg": "amplifier hooks commit-msg $HUSKY_GIT_PARAMS",
+      "pre-push": "amplifier hooks pre-push"
+    }
+  }
+}
+```
+
+### With pre-commit framework
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/microsoft/amplifier-hooks
+    rev: v1.0.0
+    hooks:
+      - id: amplifier-pre-commit
+        name: Amplifier Pre-Commit Analysis
+        stages: [commit]
+
+      - id: amplifier-commit-msg
+        name: Amplifier Commit Message
+        stages: [commit-msg]
+```
+
+---
+
+## Configuration
+
+```yaml
+# .amplifier/hooks.yaml
+hooks:
+  # Global settings
+  enabled: true
+  profile: enterprise-dev:hooks  # Or use default
+
+  pre-commit:
+    enabled: true
+    # What to check
+    checks:
+      - security        # Secrets, vulnerabilities
+      - quality         # Code smells, complexity
+      - style           # Linting violations
+      - breaking        # Breaking change detection
+
+    # Behavior
+    block_on:
+      - security:critical
+      - security:high
+
+    warn_on:
+      - security:medium
+      - quality:high
+      - breaking:any
+
+    # Files to check
+    include:
+      - "src/**/*.ts"
+      - "src/**/*.py"
+
+    exclude:
+      - "**/*.test.ts"
+      - "**/fixtures/**"
+
+    # Performance
+    max_files: 50
+    timeout: 30s
+
+  commit-msg:
+    enabled: true
+
+    # Generation mode
+    mode: enhance  # generate | enhance | validate
+
+    # Format
+    format: conventional  # conventional | angular | custom
+    max_length: 72
+    require_scope: false
+    require_body: false
+
+    # Enhancement
+    enhance:
+      expand_abbreviations: true
+      add_issue_references: true
+      suggest_scope: true
+
+  pre-push:
+    enabled: true
+
+    checks:
+      - tests           # Run test suite
+      - wip_commits     # No WIP/fixup commits
+      - force_push      # Warn on force push
+      - breaking        # Breaking change validation
+
+    # Protected branches
+    protected_branches:
+      - main
+      - master
+      - release/*
+
+    # Require for protected branches
+    require:
+      - tests_pass
+      - no_wip
+      - changelog_updated
+
+  prepare-commit-msg:
+    enabled: true
+
+    # When to generate
+    triggers:
+      - merge
+      - squash
+
+    # Template
+    template: |
+      ## Summary
+      {summary}
+
+      ## Changes
+      {changes}
+
+      ## Testing
+      {testing}
+
+      ---
+      🤖 Generated by Amplifier
+```
+
+---
+
+## Implementation
+
+### CLI Commands
+
+```python
+# amplifier_app_cli/commands/hooks.py
+import click
+from pathlib import Path
+
+@click.group()
+def hooks():
+    """Git hooks integration."""
+    pass
+
+
+@hooks.command()
+def init():
+    """Initialize Amplifier hooks in current repository."""
+
+    git_dir = find_git_dir()
+    if not git_dir:
+        click.echo("Error: Not a git repository")
+        return 1
+
+    hooks_dir = git_dir / "hooks"
+
+    # Create hook scripts
+    for hook_name in ["pre-commit", "commit-msg", "pre-push", "prepare-commit-msg"]:
+        hook_path = hooks_dir / hook_name
+        hook_path.write_text(generate_hook_script(hook_name))
+        hook_path.chmod(0o755)
+
+    # Create config
+    config_dir = Path.cwd() / ".amplifier"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "hooks.yaml").write_text(DEFAULT_HOOKS_CONFIG)
+
+    click.echo("✅ Amplifier hooks initialized")
+    click.echo(f"   Config: .amplifier/hooks.yaml")
+
+
+@hooks.command("pre-commit")
+def pre_commit():
+    """Run pre-commit analysis."""
+
+    config = load_hooks_config()
+    if not config.get("pre-commit", {}).get("enabled", True):
+        return 0
+
+    # Get staged files
+    staged_files = get_staged_files()
+    if not staged_files:
+        return 0
+
+    # Filter files
+    files_to_check = filter_files(staged_files, config["pre-commit"])
+
+    # Run analysis
+    results = run_pre_commit_analysis(files_to_check, config["pre-commit"])
+
+    # Display results
+    display_pre_commit_results(results)
+
+    # Determine exit code
+    if has_blocking_issues(results, config["pre-commit"]["block_on"]):
+        return 1
+
+    if has_warnings(results, config["pre-commit"]["warn_on"]):
+        # Interactive prompt
+        choice = click.prompt(
+            "[a]ccept warnings, [f]ix issues, [c]ancel",
+            type=click.Choice(["a", "f", "c"])
+        )
+        if choice == "c":
+            return 1
+        if choice == "f":
+            open_editor_with_fixes(results)
+            return 1
+
+    return 0
+
+
+@hooks.command("commit-msg")
+@click.argument("msg_file", type=click.Path(exists=True))
+def commit_msg(msg_file: str):
+    """Generate or enhance commit message."""
+
+    config = load_hooks_config()
+    if not config.get("commit-msg", {}).get("enabled", True):
+        return 0
+
+    # Read current message
+    msg_path = Path(msg_file)
+    current_msg = msg_path.read_text().strip()
+
+    # Get staged diff
+    diff = get_staged_diff()
+
+    # Determine mode
+    mode = config["commit-msg"].get("mode", "enhance")
+
+    if not current_msg or mode == "generate":
+        # Generate new message
+        new_msg = generate_commit_message(diff, config["commit-msg"])
+    elif mode == "enhance":
+        # Enhance existing
+        new_msg = enhance_commit_message(current_msg, diff, config["commit-msg"])
+    else:
+        # Validate only
+        issues = validate_commit_message(current_msg, config["commit-msg"])
+        if issues:
+            display_commit_message_issues(issues)
+            return 1
+        return 0
+
+    # Write message
+    msg_path.write_text(new_msg)
+
+    # Show preview
+    click.echo(f"\n📝 Commit message:\n{new_msg}\n")
+
+    return 0
+
+
+def generate_commit_message(diff: str, config: dict) -> str:
+    """Generate commit message using Amplifier."""
+
+    from amplifier_core import AmplifierSession
+
+    prompt = f"""Generate a commit message for this diff.
+
+Format: {config.get('format', 'conventional')}
+Max length (first line): {config.get('max_length', 72)}
+
+Diff:
+{diff}
+
+Generate a clear, concise commit message following the format.
+"""
+
+    session_config = get_hooks_session_config(config)
+
+    async def run():
+        async with AmplifierSession(config=session_config) as session:
+            response = await session.execute(prompt)
+            return response.text
+
+    return asyncio.run(run())
+
+
+def run_pre_commit_analysis(files: list[Path], config: dict) -> list[AnalysisResult]:
+    """Run pre-commit analysis on files."""
+
+    from amplifier_core import AmplifierSession
+
+    results = []
+
+    for file in files:
+        content = file.read_text()
+        diff = get_file_diff(file)
+
+        prompt = f"""Analyze this code change for issues.
+
+Check for:
+{format_checks(config.get('checks', []))}
+
+File: {file}
+Language: {detect_language(file)}
+
+Diff:
+{diff}
+
+Full file (for context):
+{content}
+
+Report any issues found with line numbers and severity.
+"""
+
+        session_config = get_hooks_session_config(config)
+
+        async def run():
+            async with AmplifierSession(config=session_config) as session:
+                response = await session.execute(prompt)
+                return parse_analysis_response(response.text, file)
+
+        results.append(asyncio.run(run()))
+
+    return results
+```
+
+### Hook Script Generator
+
+```python
+def generate_hook_script(hook_name: str) -> str:
+    """Generate shell script for git hook."""
+
+    return f"""#!/bin/bash
+# Amplifier {hook_name} hook
+# Generated by: amplifier hooks init
+
+# Skip if AMPLIFIER_SKIP_HOOKS is set
+if [ -n "$AMPLIFIER_SKIP_HOOKS" ]; then
+    exit 0
+fi
+
+# Check if amplifier is available
+if ! command -v amplifier &> /dev/null; then
+    echo "Warning: amplifier not found, skipping hook"
+    exit 0
+fi
+
+# Run the hook
+amplifier hooks {hook_name.replace('-', '_')} "$@"
+exit $?
+"""
+```
+
+---
+
+## Usage Examples
+
+### Basic Workflow
+
+```bash
+# Make some changes
+vim src/payments/processor.ts
+
+# Stage changes
+git add src/payments/processor.ts
+
+# Commit (triggers hooks)
+git commit
+# → Pre-commit analysis runs
+# → Commit message generated/enhanced
+# → Commit proceeds if checks pass
+
+# Push (triggers hooks)
+git push
+# → Pre-push validation runs
+# → Push proceeds if checks pass
+```
+
+### Skip Hooks Temporarily
+
+```bash
+# Skip all hooks
+AMPLIFIER_SKIP_HOOKS=1 git commit -m "WIP"
+
+# Skip specific hook
+git commit --no-verify -m "WIP"
+
+# Skip with reason (logged)
+AMPLIFIER_SKIP_REASON="urgent hotfix" git push --no-verify
+```
+
+### Interactive Mode
+
+```bash
+# Force interactive mode
+amplifier hooks pre-commit --interactive
+
+# Non-interactive (CI mode)
+amplifier hooks pre-commit --no-interactive
+```
+
+---
+
+## CI Integration
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/amplifier-hooks.yml
+name: Amplifier Hooks
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Amplifier
+        run: pip install amplifier
+
+      - name: Run Pre-Commit Analysis
+        run: |
+          amplifier hooks pre-commit \
+            --no-interactive \
+            --output json > analysis.json
+
+      - name: Post Review Comments
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const analysis = require('./analysis.json');
+            // Post comments on PR
+```
+
+### GitLab CI
+
+```yaml
+# .gitlab-ci.yml
+amplifier-analysis:
+  stage: test
+  script:
+    - pip install amplifier
+    - amplifier hooks pre-commit --no-interactive --ci
+  allow_failure: true
+  artifacts:
+    reports:
+      codequality: amplifier-report.json
+```
+
+---
+
+## Events
+
+| Event | Description | Data |
+|-------|-------------|------|
+| `hooks:pre_commit:start` | Pre-commit started | files_count |
+| `hooks:pre_commit:complete` | Pre-commit finished | issues, blocked |
+| `hooks:commit_msg:generated` | Message generated | mode, format |
+| `hooks:pre_push:start` | Pre-push started | commits_count |
+| `hooks:pre_push:complete` | Pre-push finished | checks, passed |
+
+---
+
+## Open Questions
+
+1. **Performance**: Cache analysis results for unchanged files?
+2. **Team settings**: Shared hooks config in repo vs local override?
+3. **Bypass logging**: Track when/why hooks are bypassed?
+4. **Custom checks**: Allow custom check plugins?
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 0.1.0 | Draft | Initial specification |

@@ -1,0 +1,344 @@
+# Codebase Onboarder Recipe
+# Guided onboarding for new developers to understand a codebase
+#
+# Priority: P1 (High Value)
+# Replaces: scenario-tools/codebase-onboarder.md (Python implementation)
+#
+# This recipe demonstrates:
+# - Progressive exploration (broad → deep)
+# - Personalized learning paths based on role
+# - Knowledge artifact generation
+
+name: "codebase-onboarder"
+description: "Generate personalized onboarding guide for new developers joining a codebase"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["onboarding", "documentation", "learning", "developer-experience"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 40
+
+context:
+  # Developer context
+  developer_name: ""          # Name of new developer
+  developer_role: "backend"   # backend | frontend | fullstack | data | devops
+  experience_level: "mid"     # junior | mid | senior
+  focus_areas: []             # Specific areas they'll work on
+
+  # Codebase context
+  repo_path: "."              # Path to repository
+  team_name: ""               # Team they're joining
+
+  # Output preferences
+  output_format: "markdown"   # markdown | notion | confluence
+
+steps:
+  # ============================================================
+  # Stage 1: High-Level Codebase Survey
+  # ============================================================
+  - id: "survey-codebase"
+    agent: "foundation:explorer"
+    prompt: |
+      Perform a high-level survey of the codebase at {{repo_path}}.
+
+      Discover:
+      1. **Project Type**: Web app, CLI, library, service, monorepo?
+      2. **Tech Stack**: Languages, frameworks, databases, tools
+      3. **Directory Structure**: Main folders and their purposes
+      4. **Entry Points**: Where does execution start?
+      5. **Configuration**: Config files, env vars, secrets management
+      6. **Build System**: How to build, test, deploy
+      7. **Documentation**: README, docs/, wikis, ADRs
+
+      Return structured survey with:
+      - project_type: string
+      - tech_stack: {languages, frameworks, databases, tools}
+      - structure: [{folder, purpose, importance}]
+      - entry_points: [{file, purpose}]
+      - build_commands: {install, test, run, deploy}
+      - documentation_locations: [paths]
+    output: "codebase_survey"
+    timeout: 300
+
+  # ============================================================
+  # Stage 2: Identify Key Concepts
+  # ============================================================
+  - id: "identify-concepts"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Identify the key concepts and mental models needed to understand this codebase.
+
+      ## Codebase Survey
+      {{codebase_survey}}
+
+      ## Developer Context
+      - Role: {{developer_role}}
+      - Experience: {{experience_level}}
+      - Focus areas: {{focus_areas}}
+
+      ## Identify
+
+      1. **Domain Concepts**: Business domain terminology and models
+      2. **Architecture Patterns**: Design patterns used (MVC, Clean Architecture, etc.)
+      3. **Data Models**: Core entities and relationships
+      4. **Key Abstractions**: Important interfaces, base classes, utilities
+      5. **Conventions**: Naming, file organization, coding style
+      6. **Testing Strategy**: How things are tested
+
+      For each concept:
+      - name: string
+      - category: domain | architecture | data | abstraction | convention
+      - importance: critical | important | nice_to_know
+      - location: where to find it in code
+      - explanation: 2-3 sentence description
+      - related_concepts: [concept_names]
+    output: "key_concepts"
+    timeout: 240
+
+  # ============================================================
+  # Stage 3: Map Critical Paths
+  # ============================================================
+  - id: "map-critical-paths"
+    agent: "foundation:explorer"
+    prompt: |
+      Map the critical code paths that {{developer_role}} developers need to understand.
+
+      ## Codebase Survey
+      {{codebase_survey}}
+
+      ## Focus Areas
+      {{focus_areas}}
+
+      ## Map These Paths
+
+      1. **User Request Flow**: How a request enters, processes, and returns
+      2. **Data Flow**: How data moves through the system
+      3. **Error Handling**: How errors propagate and are handled
+      4. **Authentication/Authorization**: How security works
+      5. **Background Jobs**: Async processing (if applicable)
+
+      For each path:
+      - name: string
+      - description: what this path does
+      - files: [ordered list of files touched]
+      - entry_point: where it starts
+      - key_decisions: where important branching happens
+      - common_issues: what often goes wrong here
+    output: "critical_paths"
+    timeout: 300
+
+  # ============================================================
+  # Stage 4: Generate Role-Specific Learning Path
+  # ============================================================
+  - id: "generate-learning-path"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate a personalized learning path for {{developer_name}}.
+
+      ## Developer Profile
+      - Name: {{developer_name}}
+      - Role: {{developer_role}}
+      - Experience: {{experience_level}}
+      - Focus: {{focus_areas}}
+
+      ## Codebase Knowledge
+      - Survey: {{codebase_survey}}
+      - Key Concepts: {{key_concepts}}
+      - Critical Paths: {{critical_paths}}
+
+      ## Create Learning Path
+
+      Structure as progressive levels:
+
+      ### Day 1-2: Environment & Basics
+      - Setup tasks with exact commands
+      - Run the project locally
+      - Make a trivial change and test it
+      - Understanding: project structure, build system
+
+      ### Week 1: Foundation
+      - Core concepts to learn (prioritized)
+      - Files to read (with why)
+      - Small tasks to try
+      - Understanding: main patterns, data models
+
+      ### Week 2-3: Depth
+      - Critical paths to trace
+      - Medium-complexity tasks
+      - Code areas to explore
+      - Understanding: key flows, integration points
+
+      ### Month 1: Independence
+      - Complex areas to master
+      - Challenging tasks ready for
+      - Who to ask for what
+      - Understanding: edge cases, historical decisions
+
+      For each item include:
+      - task/topic name
+      - why it matters
+      - resources (files, docs, people)
+      - success criteria
+      - estimated time
+    output: "learning_path"
+    timeout: 300
+
+  # ============================================================
+  # Stage 5: Generate Quick Reference
+  # ============================================================
+  - id: "generate-quick-reference"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate a quick reference card for daily use.
+
+      ## Codebase Knowledge
+      {{codebase_survey}}
+
+      ## Create Quick Reference
+
+      Include:
+
+      1. **Commands Cheat Sheet**
+         - Install/setup: commands
+         - Run locally: commands
+         - Run tests: commands
+         - Lint/format: commands
+         - Deploy: commands (if applicable)
+
+      2. **Where to Find Things**
+         - API endpoints: location
+         - Database models: location
+         - Business logic: location
+         - Tests: location
+         - Config: location
+
+      3. **Common Tasks**
+         - Add new endpoint: steps
+         - Add database migration: steps
+         - Add new test: steps
+         - Debug locally: steps
+
+      4. **Key Contacts**
+         - Questions about X: ask Y
+         - Code review: process
+         - Deployment: process
+
+      5. **Gotchas**
+         - Known issues
+         - Non-obvious behaviors
+         - Historical quirks
+
+      Format for easy scanning and copying.
+    output: "quick_reference"
+    timeout: 180
+
+  # ============================================================
+  # Stage 6: Generate Glossary
+  # ============================================================
+  - id: "generate-glossary"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate a glossary of terms specific to this codebase.
+
+      ## Key Concepts
+      {{key_concepts}}
+
+      ## Survey
+      {{codebase_survey}}
+
+      ## Create Glossary
+
+      Categories:
+      1. **Domain Terms**: Business-specific vocabulary
+      2. **Technical Terms**: Architecture and code patterns
+      3. **Acronyms**: All abbreviations used
+      4. **Team Terms**: Internal jargon and nicknames
+
+      For each term:
+      - term: string
+      - category: domain | technical | acronym | team
+      - definition: clear, concise explanation
+      - example: usage in context
+      - see_also: related terms
+    output: "glossary"
+    timeout: 180
+
+  # ============================================================
+  # Stage 7: Compile Onboarding Document
+  # ============================================================
+  - id: "compile-onboarding-doc"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Compile all onboarding materials into a comprehensive document.
+
+      ## Inputs
+      - Developer: {{developer_name}} ({{developer_role}}, {{experience_level}})
+      - Survey: {{codebase_survey}}
+      - Concepts: {{key_concepts}}
+      - Critical Paths: {{critical_paths}}
+      - Learning Path: {{learning_path}}
+      - Quick Reference: {{quick_reference}}
+      - Glossary: {{glossary}}
+
+      ## Document Format: {{output_format}}
+
+      ## Structure
+
+      # Onboarding Guide: {{developer_name}}
+      *Welcome to the {{team_name}} team!*
+
+      ## Overview
+      - What this codebase does
+      - Tech stack summary
+      - Your role and focus areas
+
+      ## Quick Start
+      - Environment setup (step by step)
+      - Running locally
+      - Making your first change
+
+      ## Learning Path
+      (Progressive learning structure)
+
+      ## Architecture Overview
+      - System diagram (text)
+      - Key concepts
+      - Critical paths
+
+      ## Quick Reference
+      (Commands, locations, common tasks)
+
+      ## Glossary
+      (Terms and definitions)
+
+      ## Resources
+      - Documentation links
+      - Team contacts
+      - Useful tools
+
+      ## FAQ
+      - Common new developer questions
+      - Where to get help
+
+      Make it welcoming, practical, and scannable.
+    output: "onboarding_document"
+    timeout: 360
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Basic onboarding:
+#   amplifier run "execute recipes/codebase-onboarder.yaml with developer_name='Alice' developer_role='backend'"
+#
+# Senior frontend dev:
+#   amplifier run "execute recipes/codebase-onboarder.yaml with developer_name='Bob' developer_role='frontend' experience_level='senior'"
+#
+# Focused onboarding:
+#   amplifier run "execute recipes/codebase-onboarder.yaml with developer_name='Carol' focus_areas='[\"authentication\", \"api\"]'"
+#
+# ============================================================

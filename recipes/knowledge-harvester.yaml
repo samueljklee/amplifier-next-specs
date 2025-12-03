@@ -1,0 +1,484 @@
+# Knowledge Harvester Recipe
+# Extract knowledge from Slack/PRs/meetings into structured knowledge base
+#
+# Priority: P2 (Enhancement)
+#
+# This recipe demonstrates:
+# - Multi-source ingestion
+# - Entity extraction and synthesis
+# - Knowledge graph building
+
+name: "knowledge-harvester"
+description: "Extract and synthesize knowledge from team communications into structured knowledge base"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["knowledge", "documentation", "synthesis", "team"]
+
+recursion:
+  max_depth: 4
+  max_total_steps: 80
+
+context:
+  # Sources
+  harvest_slack: true
+  slack_channels: []             # Empty = all accessible channels
+  harvest_prs: true
+  pr_repos: []                   # Empty = current repo
+  harvest_docs: true
+  docs_paths: ["docs/", "*.md"]
+
+  # Time window
+  lookback_days: 30
+
+  # Focus areas
+  topics: []                     # Empty = discover topics automatically
+  exclude_topics: ["random", "social", "off-topic"]
+
+  # Output
+  output_format: "markdown"      # markdown | notion | confluence
+  output_path: "docs/knowledge/"
+  update_existing: true          # Update or create new
+
+steps:
+  # ============================================================
+  # Stage 1: Source Discovery
+  # ============================================================
+  - id: "discover-sources"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover available knowledge sources.
+
+      ## Configuration
+      - Slack: {{harvest_slack}}, Channels: {{slack_channels}}
+      - PRs: {{harvest_prs}}, Repos: {{pr_repos}}
+      - Docs: {{harvest_docs}}, Paths: {{docs_paths}}
+
+      ## Discovery Tasks
+
+      1. **Slack Channels**
+         - Available channels
+         - Message volume per channel
+         - Active participants
+
+      2. **PR Sources**
+         - Repositories accessible
+         - PR count in timeframe
+         - Review activity
+
+      3. **Documentation**
+         - Existing docs
+         - Last updated dates
+         - Coverage areas
+
+      Return:
+      - slack_sources: [{channel, message_count, participants}]
+      - pr_sources: [{repo, pr_count, review_count}]
+      - doc_sources: [{path, last_updated, topics}]
+      - total_volume: estimated items to process
+      - recommended_focus: high-value sources
+    output: "discovered_sources"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Harvest Slack Knowledge
+  # ============================================================
+  - id: "harvest-slack"
+    condition: "{{harvest_slack}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Harvest knowledge from Slack conversations.
+
+      ## Sources: {{discovered_sources.slack_sources}}
+      ## Lookback: {{lookback_days}} days
+      ## Exclude Topics: {{exclude_topics}}
+
+      ## Harvesting Strategy
+
+      1. **Identify Knowledge-Rich Messages**
+         - Technical decisions
+         - Problem solutions
+         - Architecture discussions
+         - Process explanations
+         - Onboarding answers
+
+      2. **Extract Context**
+         - Full thread (not just first message)
+         - Links shared
+         - Files attached
+         - Reactions (indicate value)
+
+      3. **Filter Noise**
+         - Skip purely social messages
+         - Skip meeting logistics
+         - Skip one-word responses
+
+      4. **Categorize**
+         - How-to knowledge
+         - Why decisions
+         - What architecture
+         - Who owns what
+         - When processes
+
+      Return:
+      - knowledge_items: [{source, timestamp, participants, content, category, value_score}]
+      - by_category: {how_to: [], decisions: [], architecture: [], ownership: [], process: []}
+      - key_contributors: [{person, contributions}]
+      - topics_discovered: [topics from content]
+    output: "slack_knowledge"
+    timeout: 400
+
+  # ============================================================
+  # Stage 3: Harvest PR Knowledge
+  # ============================================================
+  - id: "harvest-prs"
+    condition: "{{harvest_prs}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Harvest knowledge from pull requests.
+
+      ## Sources: {{discovered_sources.pr_sources}}
+      ## Lookback: {{lookback_days}} days
+
+      ## PR Knowledge Sources
+
+      1. **PR Descriptions**
+         - Why changes were made
+         - Design decisions
+         - Migration notes
+
+      2. **Review Comments**
+         - Technical feedback
+         - Best practices shared
+         - Bug explanations
+
+      3. **Discussion Threads**
+         - Architectural debates
+         - Trade-off discussions
+         - Decision rationale
+
+      4. **Commit Messages**
+         - Change explanations
+         - Bug fix details
+         - Feature context
+
+      ## Extract
+
+      For each valuable item:
+      - What knowledge it contains
+      - Code areas it relates to
+      - People involved
+      - Decisions made
+
+      Return:
+      - knowledge_items: [{pr, type, content, code_areas, participants, decision_made}]
+      - by_type: {design: [], review: [], discussion: [], commit: []}
+      - code_area_knowledge: {area: [items]}
+      - active_reviewers: [{person, expertise_areas}]
+    output: "pr_knowledge"
+    timeout: 400
+
+  # ============================================================
+  # Stage 4: Harvest Documentation
+  # ============================================================
+  - id: "harvest-docs"
+    condition: "{{harvest_docs}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Analyze existing documentation for knowledge.
+
+      ## Sources: {{discovered_sources.doc_sources}}
+
+      ## Documentation Analysis
+
+      1. **Content Inventory**
+         - What topics are covered
+         - Depth of coverage
+         - Currency (up to date?)
+
+      2. **Gap Identification**
+         - Topics mentioned but not documented
+         - Outdated information
+         - Missing examples
+
+      3. **Cross-Reference**
+         - Links between docs
+         - References to code
+         - External resources
+
+      4. **Quality Assessment**
+         - Clarity
+         - Completeness
+         - Accuracy (where verifiable)
+
+      Return:
+      - documented_topics: [{topic, docs, coverage_depth, currency}]
+      - gaps: [{topic, evidence_of_need, priority}]
+      - outdated: [{doc, reason, staleness}]
+      - quality_scores: [{doc, clarity, completeness, accuracy}]
+    output: "doc_knowledge"
+    timeout: 240
+
+  # ============================================================
+  # Stage 5: Entity Extraction
+  # ============================================================
+  - id: "extract-entities"
+    agent: "developer-expertise:researcher"
+    prompt: |
+      Extract knowledge entities from all sources.
+
+      ## Knowledge Sources
+      - Slack: {{slack_knowledge}}
+      - PRs: {{pr_knowledge}}
+      - Docs: {{doc_knowledge}}
+
+      ## Entity Types
+
+      1. **Concepts**
+         - Technical terms
+         - Domain terms
+         - Acronyms
+         - Named patterns
+
+      2. **Decisions**
+         - Architecture decisions
+         - Technology choices
+         - Process decisions
+         - Trade-offs made
+
+      3. **People & Roles**
+         - Subject matter experts
+         - Code owners
+         - Decision makers
+
+      4. **Processes**
+         - How to do X
+         - When to do Y
+         - Who approves Z
+
+      5. **Relationships**
+         - Concept dependencies
+         - People-to-area mapping
+         - Decision-to-code links
+
+      Return:
+      - concepts: [{name, definition, sources, related_concepts}]
+      - decisions: [{decision, rationale, date, participants, status}]
+      - experts: [{person, expertise_areas, evidence}]
+      - processes: [{name, steps, triggers, owners}]
+      - relationships: [{from, to, relationship_type}]
+    output: "extracted_entities"
+    timeout: 360
+
+  # ============================================================
+  # Stage 6: Synthesize Knowledge
+  # ============================================================
+  - id: "synthesize-knowledge"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Synthesize extracted knowledge into coherent knowledge base.
+
+      ## Entities
+      {{extracted_entities}}
+
+      ## Synthesis Tasks
+
+      1. **Deduplicate**
+         - Merge same concepts from different sources
+         - Reconcile conflicting information
+         - Note disagreements
+
+      2. **Organize**
+         - Group by topic area
+         - Create hierarchy
+         - Establish relationships
+
+      3. **Enrich**
+         - Add context where missing
+         - Link related items
+         - Note confidence levels
+
+      4. **Validate**
+         - Check for contradictions
+         - Flag uncertain information
+         - Identify gaps
+
+      Return:
+      - knowledge_graph: {nodes: [], edges: []}
+      - topics: [{topic, subtopics, items}]
+      - contradictions: [{item_a, item_b, conflict}]
+      - confidence_map: [{item, confidence, sources}]
+      - gaps_identified: [{area, missing_knowledge, importance}]
+    output: "synthesized_knowledge"
+    timeout: 300
+
+  # ============================================================
+  # Stage 7: Generate Documentation
+  # ============================================================
+  - id: "generate-documentation"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate documentation from synthesized knowledge.
+
+      ## Knowledge
+      {{synthesized_knowledge}}
+
+      ## Output Format: {{output_format}}
+      ## Output Path: {{output_path}}
+
+      ## Documentation Structure
+
+      1. **Glossary**
+         - All concepts with definitions
+         - Acronym expansions
+         - Related terms
+
+      2. **Architecture Decisions**
+         - ADR format for each decision
+         - Context, decision, consequences
+         - Status (accepted, superseded, etc.)
+
+      3. **How-To Guides**
+         - Process documentation
+         - Step-by-step guides
+         - Common tasks
+
+      4. **Team Knowledge**
+         - Who knows what
+         - Expertise map
+         - Contact for questions
+
+      5. **FAQ**
+         - Common questions from Slack
+         - Answers with sources
+
+      ## For Each Document
+
+      - Clear title
+      - Last updated
+      - Sources (links to original)
+      - Related documents
+      - Confidence level
+
+      Return:
+      - documents: [{path, title, content, sources, confidence}]
+      - glossary: complete glossary
+      - adrs: [architecture decision records]
+      - guides: [how-to guides]
+      - faq: consolidated FAQ
+    output: "generated_docs"
+    timeout: 400
+
+  # ============================================================
+  # Stage 8: Update Existing Docs (if enabled)
+  # ============================================================
+  - id: "update-existing"
+    condition: "{{update_existing}} == 'true'"
+    agent: "developer-expertise:modular-builder"
+    prompt: |
+      Update existing documentation with new knowledge.
+
+      ## Existing Docs: {{doc_knowledge}}
+      ## New Knowledge: {{generated_docs}}
+
+      ## Update Strategy
+
+      1. **Identify Updates**
+         - Outdated sections to update
+         - Gaps to fill
+         - New sections to add
+
+      2. **Merge Strategy**
+         - Preserve existing structure
+         - Add new information
+         - Mark updates clearly
+
+      3. **Change Tracking**
+         - What was added
+         - What was updated
+         - What was removed
+
+      Return:
+      - updates_made: [{doc, section, change_type, content}]
+      - new_docs_created: [{path, reason}]
+      - docs_unchanged: [paths]
+      - review_needed: [{doc, reason}]
+    output: "doc_updates"
+    timeout: 240
+
+  # ============================================================
+  # Stage 9: Generate Harvest Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate knowledge harvesting report.
+
+      ## All Data
+      - Sources: {{discovered_sources}}
+      - Slack: {{slack_knowledge}}
+      - PRs: {{pr_knowledge}}
+      - Docs: {{doc_knowledge}}
+      - Entities: {{extracted_entities}}
+      - Synthesis: {{synthesized_knowledge}}
+      - Generated: {{generated_docs}}
+      - Updates: {{doc_updates}}
+
+      ## Report Sections
+
+      # Knowledge Harvest Report
+
+      ## Summary
+      - Sources processed
+      - Knowledge items extracted
+      - Documents created/updated
+      - Gaps identified
+
+      ## Knowledge Map
+      - Topics covered
+      - Depth of coverage
+      - Key experts
+
+      ## New Insights
+      - Decisions documented
+      - Processes captured
+      - FAQ compiled
+
+      ## Gaps & Recommendations
+      - Areas needing more documentation
+      - Conflicting information to resolve
+      - Experts to interview
+
+      ## Metrics
+      - Coverage improvement
+      - Documentation currency
+      - Knowledge accessibility
+
+      Return:
+      - report: full markdown document
+      - metrics: {items_extracted, docs_created, docs_updated, gaps_found}
+      - recommendations: [{area, action, priority}]
+      - next_harvest: recommended next harvest focus
+    output: "harvest_report"
+    timeout: 180
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Full harvest:
+#   amplifier run "execute recipes/knowledge-harvester.yaml"
+#
+# Slack only:
+#   amplifier run "execute recipes/knowledge-harvester.yaml with harvest_prs=false harvest_docs=false"
+#
+# Specific channels:
+#   amplifier run "execute recipes/knowledge-harvester.yaml with slack_channels='[\"#engineering\", \"#architecture\"]'"
+#
+# Specific topics:
+#   amplifier run "execute recipes/knowledge-harvester.yaml with topics='[\"authentication\", \"database\"]'"
+#
+# Longer lookback:
+#   amplifier run "execute recipes/knowledge-harvester.yaml with lookback_days=90"
+#
+# ============================================================

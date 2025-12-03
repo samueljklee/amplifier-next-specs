@@ -1,0 +1,430 @@
+# Migration Orchestrator Recipe
+# Complex migrations with validation at each step
+#
+# Priority: P1 (High Value)
+#
+# This recipe demonstrates:
+# - Checkpointing for long-running tasks
+# - Conditional steps with rollback support
+# - Multi-phase validation gates
+
+name: "migration-orchestrator"
+description: "Orchestrate complex migrations (framework, database, library) with validation at each step"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["migration", "refactoring", "upgrade", "database"]
+
+recursion:
+  max_depth: 5
+  max_total_steps: 100
+
+context:
+  # Migration type
+  migration_type: "library"      # library | framework | database | infrastructure
+
+  # Source and target
+  source_version: ""             # Current version/state
+  target_version: ""             # Target version/state
+  package_name: ""               # Package being migrated (for library migrations)
+
+  # Scope
+  affected_paths: ["."]          # Paths to migrate
+  exclude_paths: ["node_modules", ".venv", "dist"]
+
+  # Safety
+  dry_run: true                  # Preview changes without applying
+  create_backup: true            # Backup before migration
+  run_tests_after_each_step: true
+  require_manual_approval: false # Pause for approval at gates
+
+  # Rollback
+  enable_rollback: true
+  rollback_on_test_failure: true
+
+steps:
+  # ============================================================
+  # Stage 1: Migration Analysis
+  # ============================================================
+  - id: "analyze-migration"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze the migration from {{source_version}} to {{target_version}}.
+
+      ## Migration Type: {{migration_type}}
+      ## Package: {{package_name}}
+      ## Affected Paths: {{affected_paths}}
+
+      ## Analysis Tasks
+
+      1. **Breaking Changes**
+         - API changes between versions
+         - Removed features
+         - Changed behavior
+         - New requirements
+
+      2. **Dependency Impact**
+         - Transitive dependency changes
+         - Peer dependency requirements
+         - Version conflicts
+
+      3. **Code Impact Assessment**
+         - Files that need changes
+         - Patterns that need updating
+         - Tests that need modification
+
+      4. **Risk Assessment**
+         - High-risk changes
+         - Areas requiring extra testing
+         - Potential runtime issues
+
+      Return:
+      - breaking_changes: [{change, impact, migration_path}]
+      - affected_files: [{path, changes_needed, risk_level}]
+      - estimated_effort: hours
+      - risk_level: low | medium | high | critical
+      - recommended_approach: phased | big_bang | feature_flag
+    output: "migration_analysis"
+    timeout: 300
+
+  # ============================================================
+  # Stage 2: Generate Migration Plan
+  # ============================================================
+  - id: "generate-plan"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate a detailed migration plan.
+
+      ## Analysis
+      {{migration_analysis}}
+
+      ## Plan Requirements
+
+      1. **Phase Breakdown**
+         - Each phase should be independently deployable
+         - Clear rollback point after each phase
+         - Tests to validate each phase
+
+      2. **Step Ordering**
+         - Dependencies between steps
+         - Safe ordering (data before code, etc.)
+         - Parallel opportunities
+
+      3. **Validation Gates**
+         - What to check after each phase
+         - Success criteria
+         - Rollback triggers
+
+      4. **Rollback Procedures**
+         - How to undo each phase
+         - Data recovery steps
+         - Time estimates for rollback
+
+      Return:
+      - phases: [{id, name, steps, validation, rollback_procedure}]
+      - total_phases: count
+      - estimated_duration: hours
+      - checkpoint_strategy: when to save progress
+      - parallel_opportunities: phases that can run together
+    output: "migration_plan"
+    timeout: 240
+
+  # ============================================================
+  # Stage 3: Create Backup (if enabled)
+  # ============================================================
+  - id: "create-backup"
+    condition: "{{create_backup}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Create backup before migration.
+
+      ## Backup Strategy
+
+      Based on migration type {{migration_type}}:
+
+      **For Library/Framework:**
+      - Git stash or branch
+      - Package lock files
+      - Current dependency state
+
+      **For Database:**
+      - Schema snapshot
+      - Data backup (if applicable)
+      - Migration state
+
+      ## Actions
+
+      1. Create backup branch: `backup/pre-migration-{{target_version}}`
+      2. Save current state
+      3. Document restore procedure
+
+      Return:
+      - backup_created: boolean
+      - backup_location: path or reference
+      - restore_command: how to restore
+      - backup_size: if applicable
+    output: "backup_info"
+    timeout: 180
+
+  # ============================================================
+  # Stage 4: Execute Migration Phases
+  # ============================================================
+  - id: "execute-phase-1"
+    agent: "developer-expertise:modular-builder"
+    prompt: |
+      Execute Phase 1 of the migration.
+
+      ## Migration Plan
+      {{migration_plan}}
+
+      ## Phase 1 Details
+      {{migration_plan.phases[0]}}
+
+      ## Dry Run Mode: {{dry_run}}
+
+      ## Tasks
+
+      1. **Preparation**
+         - Install new dependencies (if not dry run)
+         - Update configuration files
+         - Create compatibility shims if needed
+
+      2. **Code Changes**
+         - Apply automated codemods
+         - Update import statements
+         - Fix breaking API calls
+
+      3. **Validation** (if not dry run)
+         - Run affected tests
+         - Check for runtime errors
+         - Verify functionality
+
+      If dry_run=true:
+      - Show what would change
+      - Don't apply changes
+      - Report potential issues
+
+      Return:
+      - phase_complete: boolean
+      - changes_made: [{file, change_type, description}]
+      - tests_passed: boolean (if run)
+      - issues_found: [{severity, description, file}]
+      - checkpoint_id: for resumption
+    output: "phase_1_result"
+    timeout: 600
+
+  - id: "validate-phase-1"
+    condition: "{{run_tests_after_each_step}} == 'true'"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Validate Phase 1 completion.
+
+      ## Phase 1 Result
+      {{phase_1_result}}
+
+      ## Validation Tasks
+
+      1. **Test Execution**
+         - Run unit tests
+         - Run integration tests
+         - Check test coverage delta
+
+      2. **Static Analysis**
+         - Type checking
+         - Lint errors
+         - Import resolution
+
+      3. **Runtime Verification**
+         - Application starts
+         - Core functionality works
+         - No regression in critical paths
+
+      Return:
+      - validation_passed: boolean
+      - test_results: {passed, failed, skipped}
+      - blocking_issues: [{test, error}]
+      - warnings: [{issue, recommendation}]
+      - proceed_to_next_phase: boolean
+    output: "phase_1_validation"
+    timeout: 300
+
+  - id: "rollback-phase-1"
+    condition: "{{phase_1_validation.validation_passed}} == 'false' and {{rollback_on_test_failure}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Rollback Phase 1 due to validation failure.
+
+      ## Backup Info
+      {{backup_info}}
+
+      ## Phase 1 Changes
+      {{phase_1_result.changes_made}}
+
+      ## Rollback Tasks
+
+      1. Revert code changes
+      2. Restore dependencies
+      3. Verify rollback success
+
+      Return:
+      - rollback_complete: boolean
+      - restored_files: [paths]
+      - verification: tests pass after rollback
+    output: "phase_1_rollback"
+    timeout: 180
+    on_error: "continue"
+
+  # ============================================================
+  # Stage 5: Continue with Remaining Phases
+  # ============================================================
+  - id: "execute-remaining-phases"
+    condition: "{{phase_1_validation.proceed_to_next_phase}} == 'true'"
+    agent: "developer-expertise:modular-builder"
+    prompt: |
+      Execute remaining migration phases.
+
+      ## Migration Plan
+      {{migration_plan}}
+
+      ## Completed
+      - Phase 1: {{phase_1_result}}
+
+      ## Remaining Phases
+      {{migration_plan.phases[1:]}}
+
+      ## For Each Remaining Phase
+
+      1. Apply changes (or preview if dry_run)
+      2. Run validation
+      3. Checkpoint progress
+      4. Continue or rollback based on results
+
+      ## Dry Run Mode: {{dry_run}}
+
+      Return:
+      - all_phases_complete: boolean
+      - phase_results: [{phase_id, success, changes, issues}]
+      - final_validation: overall success
+      - total_changes: count
+      - remaining_manual_steps: [{description, instructions}]
+    output: "remaining_phases_result"
+    timeout: 1200
+
+  # ============================================================
+  # Stage 6: Post-Migration Validation
+  # ============================================================
+  - id: "final-validation"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Perform final migration validation.
+
+      ## Migration Results
+      - Phase 1: {{phase_1_result}}
+      - Remaining: {{remaining_phases_result}}
+
+      ## Validation Checklist
+
+      1. **Completeness**
+         - All files migrated?
+         - All breaking changes addressed?
+         - No legacy patterns remaining?
+
+      2. **Functionality**
+         - All tests passing?
+         - Application runs correctly?
+         - Performance acceptable?
+
+      3. **Code Quality**
+         - No new warnings?
+         - Follows new conventions?
+         - Documentation updated?
+
+      4. **Cleanup**
+         - Remove compatibility shims
+         - Remove deprecated imports
+         - Update dependencies to final versions
+
+      Return:
+      - migration_successful: boolean
+      - remaining_issues: [{severity, description, action}]
+      - cleanup_tasks: [{task, priority}]
+      - documentation_updates: [{doc, change_needed}]
+      - recommended_next_steps: [actions]
+    output: "final_validation"
+    timeout: 240
+
+  # ============================================================
+  # Stage 7: Generate Migration Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive migration report.
+
+      ## Migration Summary
+      - Type: {{migration_type}}
+      - From: {{source_version}}
+      - To: {{target_version}}
+      - Dry Run: {{dry_run}}
+
+      ## Results
+      - Analysis: {{migration_analysis}}
+      - Plan: {{migration_plan}}
+      - Execution: {{phase_1_result}}, {{remaining_phases_result}}
+      - Validation: {{final_validation}}
+
+      ## Report Sections
+
+      1. **Executive Summary**
+         - Migration status (success/partial/failed)
+         - Key metrics (files changed, time taken)
+         - Blocking issues if any
+
+      2. **Changes Made**
+         - By category
+         - By file
+         - Breaking changes addressed
+
+      3. **Validation Results**
+         - Test results
+         - Manual verification needed
+
+      4. **Known Issues**
+         - Remaining work
+         - Workarounds in place
+
+      5. **Rollback Instructions**
+         - How to undo if needed
+         - Backup locations
+
+      6. **Next Steps**
+         - Cleanup tasks
+         - Monitoring recommendations
+         - Timeline for removing shims
+
+      Return:
+      - report: full markdown document
+      - summary: one-paragraph status
+      - action_items: [{owner, task, deadline}]
+    output: "migration_report"
+    timeout: 180
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Library upgrade (dry run first):
+#   amplifier run "execute recipes/migration-orchestrator.yaml with migration_type='library' package_name='react' source_version='17.0.0' target_version='18.0.0' dry_run=true"
+#
+# Apply migration after review:
+#   amplifier run "execute recipes/migration-orchestrator.yaml with ... dry_run=false"
+#
+# Database migration:
+#   amplifier run "execute recipes/migration-orchestrator.yaml with migration_type='database' source_version='v1' target_version='v2'"
+#
+# Framework migration with manual approval:
+#   amplifier run "execute recipes/migration-orchestrator.yaml with migration_type='framework' require_manual_approval=true"
+#
+# ============================================================

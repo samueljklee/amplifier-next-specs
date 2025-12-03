@@ -1,0 +1,496 @@
+# Performance Profiler Recipe
+# Profile application, identify bottlenecks, track performance over time
+#
+# Priority: P2 (Enhancement)
+#
+# This recipe demonstrates:
+# - Metrics integration
+# - Trend analysis
+# - Automated optimization recommendations
+
+name: "performance-profiler"
+description: "Profile application performance, identify bottlenecks, and generate optimization recommendations"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["performance", "profiling", "optimization", "monitoring"]
+
+recursion:
+  max_depth: 4
+  max_total_steps: 80
+
+context:
+  # Target
+  target_type: "api"             # api | web | cli | service
+  target_endpoints: []           # Empty = all endpoints
+  target_paths: ["src/"]
+
+  # Profiling
+  profile_cpu: true
+  profile_memory: true
+  profile_io: true
+  profile_database: true
+
+  # Baseline
+  baseline_source: "production"  # production | staging | historical | none
+  comparison_period: "7d"        # Period for trend analysis
+
+  # Thresholds
+  latency_p95_threshold: 500     # ms
+  latency_p99_threshold: 1000    # ms
+  memory_threshold: 512          # MB
+  cpu_threshold: 80              # percentage
+
+steps:
+  # ============================================================
+  # Stage 1: Discover Performance Surface
+  # ============================================================
+  - id: "discover-surface"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover the performance-relevant surface of the application.
+
+      ## Target Type: {{target_type}}
+      ## Target Paths: {{target_paths}}
+
+      ## Discovery Tasks
+
+      1. **Entry Points**
+         - API endpoints
+         - Event handlers
+         - Scheduled jobs
+         - Background workers
+
+      2. **Critical Paths**
+         - User-facing flows
+         - High-traffic endpoints
+         - Business-critical operations
+
+      3. **Dependencies**
+         - Database queries
+         - External API calls
+         - Cache interactions
+         - File I/O operations
+
+      4. **Resource Consumers**
+         - Memory-intensive operations
+         - CPU-intensive algorithms
+         - I/O-heavy processes
+
+      Return:
+      - entry_points: [{path, type, estimated_traffic}]
+      - critical_paths: [{name, endpoints, importance}]
+      - dependencies: [{type, location, frequency}]
+      - resource_consumers: [{location, resource_type, estimated_impact}]
+    output: "performance_surface"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Gather Current Metrics
+  # ============================================================
+  - id: "gather-metrics"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather current performance metrics.
+
+      ## Performance Surface: {{performance_surface}}
+      ## Comparison Period: {{comparison_period}}
+
+      ## Metrics to Gather
+
+      1. **Latency Metrics**
+         - p50, p95, p99 latencies
+         - By endpoint
+         - By operation type
+
+      2. **Throughput Metrics**
+         - Requests per second
+         - Success rate
+         - Error rate
+
+      3. **Resource Metrics**
+         - CPU utilization
+         - Memory usage
+         - Disk I/O
+         - Network I/O
+
+      4. **Database Metrics**
+         - Query times
+         - Connection pool usage
+         - Slow queries
+
+      5. **External Dependency Metrics**
+         - API call latencies
+         - Cache hit rates
+         - Queue depths
+
+      Return:
+      - current_metrics: {latency: {}, throughput: {}, resources: {}, database: {}, dependencies: {}}
+      - historical_metrics: metrics from {{comparison_period}} ago
+      - trends: {improving: [], degrading: [], stable: []}
+      - anomalies: [{metric, expected, actual, severity}]
+    output: "metrics_data"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Profile CPU Usage
+  # ============================================================
+  - id: "profile-cpu"
+    condition: "{{profile_cpu}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Profile CPU usage in the application.
+
+      ## Performance Surface: {{performance_surface}}
+      ## Current Metrics: {{metrics_data}}
+
+      ## CPU Profiling
+
+      1. **Hot Paths**
+         - Functions consuming most CPU
+         - Loops with high iteration counts
+         - Recursive calls
+
+      2. **Algorithmic Issues**
+         - O(n^2) or worse algorithms
+         - Unnecessary iterations
+         - Inefficient data structures
+
+      3. **Compute-Intensive Operations**
+         - Serialization/deserialization
+         - Encryption/hashing
+         - Image/video processing
+         - Complex calculations
+
+      4. **Wasted CPU**
+         - Busy waiting
+         - Unnecessary polling
+         - Redundant computations
+
+      Return:
+      - hot_spots: [{location, cpu_percent, samples, call_count}]
+      - algorithmic_issues: [{location, current_complexity, suggested_complexity, impact}]
+      - optimization_opportunities: [{location, issue, fix, estimated_improvement}]
+    output: "cpu_profile"
+    timeout: 360
+
+  # ============================================================
+  # Stage 4: Profile Memory Usage
+  # ============================================================
+  - id: "profile-memory"
+    condition: "{{profile_memory}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Profile memory usage in the application.
+
+      ## Performance Surface: {{performance_surface}}
+      ## Current Metrics: {{metrics_data}}
+
+      ## Memory Profiling
+
+      1. **Memory Allocation**
+         - Large object allocations
+         - Frequent small allocations
+         - Allocation patterns
+
+      2. **Memory Retention**
+         - Long-lived objects
+         - Potential memory leaks
+         - Cache sizes
+
+      3. **Memory-Intensive Operations**
+         - Large data processing
+         - In-memory caching
+         - Buffer management
+
+      4. **Garbage Collection**
+         - GC frequency
+         - GC pause times
+         - Object lifecycles
+
+      Return:
+      - memory_hot_spots: [{location, allocation_size, frequency}]
+      - potential_leaks: [{location, evidence, severity}]
+      - large_allocations: [{location, size, necessity}]
+      - optimization_opportunities: [{location, issue, fix, estimated_improvement}]
+    output: "memory_profile"
+    timeout: 360
+
+  # ============================================================
+  # Stage 5: Profile I/O Operations
+  # ============================================================
+  - id: "profile-io"
+    condition: "{{profile_io}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Profile I/O operations in the application.
+
+      ## Performance Surface: {{performance_surface}}
+      ## Current Metrics: {{metrics_data}}
+
+      ## I/O Profiling
+
+      1. **File I/O**
+         - Read/write patterns
+         - File sizes
+         - Synchronous vs async
+
+      2. **Network I/O**
+         - Request patterns
+         - Connection management
+         - Serialization overhead
+
+      3. **Database I/O**
+         - Query patterns
+         - N+1 queries
+         - Missing indexes
+         - Connection pooling
+
+      4. **I/O Blocking**
+         - Synchronous I/O on hot paths
+         - Missing batching
+         - Sequential instead of parallel
+
+      Return:
+      - io_hot_spots: [{location, operation, frequency, avg_duration}]
+      - blocking_io: [{location, type, impact, async_alternative}]
+      - optimization_opportunities: [{location, issue, fix, estimated_improvement}]
+    output: "io_profile"
+    timeout: 360
+
+  # ============================================================
+  # Stage 6: Profile Database Performance
+  # ============================================================
+  - id: "profile-database"
+    condition: "{{profile_database}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Profile database performance.
+
+      ## Performance Surface: {{performance_surface}}
+      ## Current Metrics: {{metrics_data}}
+
+      ## Database Profiling
+
+      1. **Query Analysis**
+         - Slow queries (by duration)
+         - Frequent queries (by count)
+         - Complex queries (by complexity)
+
+      2. **Index Analysis**
+         - Missing indexes
+         - Unused indexes
+         - Index effectiveness
+
+      3. **Query Patterns**
+         - N+1 query patterns
+         - Full table scans
+         - Join inefficiencies
+
+      4. **Connection Management**
+         - Pool utilization
+         - Connection leaks
+         - Timeout patterns
+
+      Return:
+      - slow_queries: [{query, avg_time, count, table, optimization}]
+      - missing_indexes: [{table, columns, query_impact, creation_statement}]
+      - n_plus_one: [{location, query, fix}]
+      - optimization_opportunities: [{location, issue, fix, estimated_improvement}]
+    output: "database_profile"
+    timeout: 360
+
+  # ============================================================
+  # Stage 7: Analyze Bottlenecks
+  # ============================================================
+  - id: "analyze-bottlenecks"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze all profiling data to identify bottlenecks.
+
+      ## All Profiles
+      - CPU: {{cpu_profile}}
+      - Memory: {{memory_profile}}
+      - I/O: {{io_profile}}
+      - Database: {{database_profile}}
+      - Metrics: {{metrics_data}}
+
+      ## Bottleneck Analysis
+
+      1. **Identify Top Bottlenecks**
+         - What's the #1 performance limiter?
+         - What are secondary bottlenecks?
+         - Are there cascade effects?
+
+      2. **Root Cause Analysis**
+         - Why is each bottleneck occurring?
+         - Is it code, configuration, or infrastructure?
+         - Is it fixable or requires redesign?
+
+      3. **Impact Assessment**
+         - User-facing impact
+         - Resource cost impact
+         - Scalability impact
+
+      4. **Fix Prioritization**
+         - Effort vs impact matrix
+         - Quick wins vs major refactors
+         - Dependencies between fixes
+
+      Return:
+      - top_bottlenecks: [{rank, type, location, impact, root_cause}]
+      - cascade_effects: [{bottleneck, causes, affected_by}]
+      - quick_wins: [{fix, impact, effort}]
+      - major_refactors: [{fix, impact, effort, risk}]
+    output: "bottleneck_analysis"
+    timeout: 240
+
+  # ============================================================
+  # Stage 8: Generate Optimization Plan
+  # ============================================================
+  - id: "generate-optimization-plan"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate a prioritized optimization plan.
+
+      ## Bottleneck Analysis: {{bottleneck_analysis}}
+      ## Thresholds
+      - Latency p95: {{latency_p95_threshold}}ms
+      - Latency p99: {{latency_p99_threshold}}ms
+      - Memory: {{memory_threshold}}MB
+      - CPU: {{cpu_threshold}}%
+
+      ## Optimization Plan Structure
+
+      ### Phase 1: Quick Wins (Week 1)
+      - High impact, low effort fixes
+      - No architectural changes
+      - Minimal risk
+
+      ### Phase 2: Targeted Optimization (Week 2-3)
+      - Medium effort optimizations
+      - Specific bottleneck fixes
+      - Some refactoring
+
+      ### Phase 3: Architectural Improvements (Month 2)
+      - Major refactoring
+      - Design changes
+      - Infrastructure updates
+
+      ## For Each Optimization
+
+      - What to change
+      - Expected improvement (quantified)
+      - Implementation steps
+      - Verification method
+      - Rollback plan
+
+      Return:
+      - optimization_plan: {phase1: [], phase2: [], phase3: []}
+      - expected_improvements: {latency: %, memory: %, cpu: %}
+      - implementation_order: [ordered list of changes]
+      - dependencies: [{change, depends_on}]
+      - total_effort: hours estimate
+    output: "optimization_plan"
+    timeout: 300
+
+  # ============================================================
+  # Stage 9: Generate Performance Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive performance report.
+
+      ## All Data
+      - Surface: {{performance_surface}}
+      - Metrics: {{metrics_data}}
+      - CPU: {{cpu_profile}}
+      - Memory: {{memory_profile}}
+      - I/O: {{io_profile}}
+      - Database: {{database_profile}}
+      - Bottlenecks: {{bottleneck_analysis}}
+      - Plan: {{optimization_plan}}
+
+      ## Report Structure
+
+      # Performance Analysis Report
+
+      ## Executive Summary
+      - Current performance status
+      - Key bottlenecks identified
+      - Expected improvement potential
+      - Recommended next steps
+
+      ## Current Performance
+
+      ### Latency
+      - p50/p95/p99 by endpoint
+      - Trends vs baseline
+      - Threshold compliance
+
+      ### Resource Utilization
+      - CPU, Memory, I/O
+      - Comparison to limits
+      - Growth trends
+
+      ### Database Performance
+      - Query performance
+      - Index effectiveness
+      - Connection health
+
+      ## Bottleneck Analysis
+
+      ### Top Bottlenecks
+      (Ranked by impact)
+
+      ### Root Causes
+      (Technical analysis)
+
+      ## Optimization Recommendations
+
+      ### Quick Wins
+      (Immediate improvements)
+
+      ### Major Optimizations
+      (Planned improvements)
+
+      ## Monitoring Recommendations
+      - Metrics to track
+      - Alerts to set up
+      - Dashboards needed
+
+      ## Appendix
+      - Detailed profiling data
+      - Query analysis
+      - Configuration review
+
+      Return:
+      - report: full markdown document
+      - dashboard_metrics: key metrics for monitoring
+      - action_items: [{item, priority, owner, deadline}]
+      - follow_up_date: when to re-profile
+    output: "performance_report"
+    timeout: 240
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Full profile:
+#   amplifier run "execute recipes/performance-profiler.yaml"
+#
+# API endpoints only:
+#   amplifier run "execute recipes/performance-profiler.yaml with target_type='api'"
+#
+# Database focus:
+#   amplifier run "execute recipes/performance-profiler.yaml with profile_cpu=false profile_memory=false profile_io=false"
+#
+# Specific endpoints:
+#   amplifier run "execute recipes/performance-profiler.yaml with target_endpoints='[\"/api/users\", \"/api/orders\"]'"
+#
+# Strict thresholds:
+#   amplifier run "execute recipes/performance-profiler.yaml with latency_p95_threshold=200 latency_p99_threshold=500"
+#
+# ============================================================

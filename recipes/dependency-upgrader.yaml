@@ -1,0 +1,403 @@
+# Dependency Upgrader Recipe
+# Automated dependency updates with compatibility checks
+#
+# Priority: P1 (High Value)
+#
+# This recipe demonstrates:
+# - foreach with parallel over packages
+# - Conditional test gates
+# - Rollback capability per dependency
+
+name: "dependency-upgrader"
+description: "Automated dependency updates with compatibility checking, testing, and rollback"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["dependencies", "upgrade", "security", "maintenance"]
+
+recursion:
+  max_depth: 4
+  max_total_steps: 150
+
+context:
+  # Scope
+  package_manager: "auto"        # auto | npm | yarn | pnpm | pip | uv | cargo
+  upgrade_type: "minor"          # patch | minor | major | security
+  include_dev: true              # Include dev dependencies
+
+  # Filtering
+  include_packages: []           # Empty = all packages
+  exclude_packages: []           # Packages to skip
+
+  # Safety
+  dry_run: true
+  run_tests: true
+  max_parallel: 5                # Max concurrent upgrades to test
+
+  # Behavior
+  auto_merge_passing: false      # Auto-merge if tests pass
+  create_pr_per_package: false   # One PR per package or batch
+  group_by: "type"               # type | scope | none
+
+steps:
+  # ============================================================
+  # Stage 1: Discover Dependencies
+  # ============================================================
+  - id: "discover-dependencies"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover all dependencies in the project.
+
+      ## Package Manager: {{package_manager}}
+      (If auto, detect from lock files)
+
+      ## Discovery Tasks
+
+      1. **Find Package Files**
+         - package.json, package-lock.json, yarn.lock
+         - pyproject.toml, requirements.txt, uv.lock
+         - Cargo.toml, Cargo.lock
+         - go.mod, go.sum
+
+      2. **Parse Dependencies**
+         - Direct dependencies
+         - Dev dependencies (if {{include_dev}})
+         - Current versions
+         - Version constraints
+
+      3. **Filter**
+         - Include: {{include_packages}}
+         - Exclude: {{exclude_packages}}
+
+      Return:
+      - package_manager: detected or specified
+      - dependencies: [{name, current_version, constraint, type, dev}]
+      - total_count: number
+      - lock_file: path
+    output: "discovered_deps"
+    timeout: 120
+
+  # ============================================================
+  # Stage 2: Check for Updates
+  # ============================================================
+  - id: "check-updates"
+    agent: "developer-expertise:integration-specialist"
+    prompt: |
+      Check for available updates for all dependencies.
+
+      ## Dependencies
+      {{discovered_deps.dependencies}}
+
+      ## Upgrade Type: {{upgrade_type}}
+
+      ## For Each Dependency
+
+      1. **Query Registry**
+         - Latest version available
+         - All versions since current
+         - Release dates
+
+      2. **Classify Update**
+         - patch: bug fixes only
+         - minor: new features, backwards compatible
+         - major: breaking changes
+         - security: has security advisory
+
+      3. **Check Advisories**
+         - Known vulnerabilities in current version
+         - CVE IDs
+         - Severity scores
+
+      4. **Filter by Upgrade Type**
+         - If {{upgrade_type}}='patch': only patches
+         - If {{upgrade_type}}='minor': patches and minors
+         - If {{upgrade_type}}='major': all updates
+         - If {{upgrade_type}}='security': only security fixes
+
+      Return:
+      - updates_available: [{name, current, latest, update_type, has_security_fix, changelog_url}]
+      - security_updates: [{name, cve, severity, fixed_in}]
+      - up_to_date: [package names]
+      - total_updates: count
+    output: "available_updates"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Analyze Breaking Changes
+  # ============================================================
+  - id: "analyze-breaking-changes"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze potential breaking changes in updates.
+
+      ## Updates to Analyze
+      {{available_updates.updates_available}}
+
+      ## For Each Update
+
+      1. **Changelog Analysis**
+         - Read changelog/release notes
+         - Identify breaking changes
+         - Find migration guides
+
+      2. **API Diff** (where possible)
+         - Removed exports
+         - Changed signatures
+         - New required options
+
+      3. **Dependency Chain**
+         - Will this update force other updates?
+         - Peer dependency changes?
+         - Version conflicts?
+
+      4. **Risk Assessment**
+         - Low: Patch, no breaking changes
+         - Medium: Minor, some API changes
+         - High: Major, significant breaking changes
+         - Critical: Known issues with upgrade
+
+      Return:
+      - analyzed_updates: [{name, risk_level, breaking_changes, migration_steps, estimated_effort}]
+      - recommended_order: [package names in safe order]
+      - batch_safe: [packages that can upgrade together]
+      - requires_attention: [packages needing manual review]
+    output: "breaking_analysis"
+    timeout: 360
+
+  # ============================================================
+  # Stage 4: Upgrade Dependencies (foreach with parallel)
+  # ============================================================
+  - id: "upgrade-packages"
+    foreach: "{{breaking_analysis.recommended_order}}"
+    parallel: true
+    max_parallel: "{{max_parallel}}"
+    agent: "developer-expertise:modular-builder"
+    prompt: |
+      Upgrade package: {{item}}
+
+      ## Package Details
+      Find in: {{breaking_analysis.analyzed_updates}}
+
+      ## Dry Run: {{dry_run}}
+
+      ## Upgrade Steps
+
+      1. **Pre-Upgrade**
+         - Record current state
+         - Check for local modifications
+
+      2. **Perform Upgrade** (if not dry run)
+         - Update version in package file
+         - Run package manager install
+         - Update lock file
+
+      3. **Apply Migrations** (if needed)
+         - Run codemods
+         - Update imports
+         - Fix breaking API calls
+
+      4. **Verify** (if not dry run)
+         - Package installs correctly
+         - No resolution errors
+         - No peer dependency warnings
+
+      Return:
+      - package: name
+      - upgraded: boolean
+      - from_version: old
+      - to_version: new
+      - code_changes: [{file, change}]
+      - warnings: [any warnings]
+    output: "upgrade_results"
+    timeout: 180
+
+  # ============================================================
+  # Stage 5: Run Tests (if enabled)
+  # ============================================================
+  - id: "run-tests"
+    condition: "{{run_tests}} == 'true' and {{dry_run}} == 'false'"
+    agent: "developer-expertise:test-coverage"
+    prompt: |
+      Run test suite after dependency upgrades.
+
+      ## Upgrades Applied
+      {{upgrade_results}}
+
+      ## Test Strategy
+
+      1. **Full Test Suite**
+         - Run all tests
+         - Capture failures
+         - Note flaky tests
+
+      2. **Targeted Tests**
+         - Tests for areas using upgraded packages
+         - Integration tests
+         - E2E tests if available
+
+      3. **Build Verification**
+         - Application builds
+         - No TypeScript/type errors
+         - No lint errors
+
+      Return:
+      - all_passed: boolean
+      - test_results: {total, passed, failed, skipped}
+      - failures: [{test, error, likely_cause}]
+      - build_success: boolean
+      - type_errors: [errors]
+    output: "test_results"
+    timeout: 600
+
+  # ============================================================
+  # Stage 6: Rollback Failed Upgrades
+  # ============================================================
+  - id: "rollback-failures"
+    condition: "{{test_results.all_passed}} == 'false'"
+    agent: "foundation:explorer"
+    prompt: |
+      Rollback upgrades that caused test failures.
+
+      ## Test Failures
+      {{test_results.failures}}
+
+      ## Upgrade Results
+      {{upgrade_results}}
+
+      ## Rollback Strategy
+
+      1. **Identify Culprits**
+         - Match failures to upgraded packages
+         - Check error messages for package names
+
+      2. **Selective Rollback**
+         - Revert only failing packages
+         - Keep successful upgrades
+         - Update lock file
+
+      3. **Verify Rollback**
+         - Re-run failed tests
+         - Confirm they pass now
+
+      Return:
+      - rolled_back: [package names]
+      - kept_upgrades: [package names]
+      - tests_now_pass: boolean
+      - manual_review_needed: [packages that couldn't be cleanly rolled back]
+    output: "rollback_result"
+    timeout: 300
+    on_error: "continue"
+
+  # ============================================================
+  # Stage 7: Generate Upgrade Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate dependency upgrade report.
+
+      ## Summary Data
+      - Discovered: {{discovered_deps}}
+      - Available Updates: {{available_updates}}
+      - Analysis: {{breaking_analysis}}
+      - Upgrades: {{upgrade_results}}
+      - Tests: {{test_results}}
+      - Rollbacks: {{rollback_result}}
+
+      ## Dry Run: {{dry_run}}
+
+      ## Report Sections
+
+      1. **Executive Summary**
+         - Total dependencies checked
+         - Updates available
+         - Updates applied (or would be applied)
+         - Security fixes included
+
+      2. **Security Updates**
+         - CVEs addressed
+         - Remaining vulnerabilities
+         - Urgency assessment
+
+      3. **Successful Upgrades**
+         - Package, old version, new version
+         - Change type (patch/minor/major)
+         - Notable changes
+
+      4. **Failed/Skipped Upgrades**
+         - Why each failed
+         - Manual steps needed
+         - Recommended timeline
+
+      5. **Breaking Changes Applied**
+         - Code modifications made
+         - Tests updated
+         - Documentation changes needed
+
+      6. **Recommendations**
+         - Packages to upgrade manually
+         - Technical debt to address
+         - Next upgrade cycle timing
+
+      Return:
+      - report: full markdown document
+      - summary_stats: {checked, updated, failed, security_fixed}
+      - action_items: [{priority, task, package}]
+      - next_run_recommendation: when to run again
+    output: "upgrade_report"
+    timeout: 180
+
+  # ============================================================
+  # Stage 8: Create Pull Request (if not dry run)
+  # ============================================================
+  - id: "create-pr"
+    condition: "{{dry_run}} == 'false' and {{create_pr_per_package}} == 'false'"
+    agent: "foundation:explorer"
+    prompt: |
+      Create pull request for dependency upgrades.
+
+      ## Upgrade Report
+      {{upgrade_report}}
+
+      ## PR Details
+
+      **Title**: chore(deps): upgrade dependencies
+
+      **Body**:
+      - Summary of upgrades
+      - Security fixes highlighted
+      - Breaking changes noted
+      - Test results
+      - Link to full report
+
+      **Labels**: dependencies, automated
+
+      **Reviewers**: Based on CODEOWNERS for package files
+
+      Return:
+      - pr_created: boolean
+      - pr_url: URL
+      - pr_number: number
+    output: "pr_result"
+    timeout: 120
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Check for updates (dry run):
+#   amplifier run "execute recipes/dependency-upgrader.yaml"
+#
+# Apply patch updates:
+#   amplifier run "execute recipes/dependency-upgrader.yaml with dry_run=false upgrade_type='patch'"
+#
+# Security updates only:
+#   amplifier run "execute recipes/dependency-upgrader.yaml with upgrade_type='security' dry_run=false"
+#
+# Upgrade specific packages:
+#   amplifier run "execute recipes/dependency-upgrader.yaml with include_packages='[\"react\", \"typescript\"]'"
+#
+# Major version upgrades (careful!):
+#   amplifier run "execute recipes/dependency-upgrader.yaml with upgrade_type='major' dry_run=true"
+#
+# ============================================================

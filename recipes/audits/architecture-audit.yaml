@@ -1,0 +1,309 @@
+# Architecture Audit Sub-Recipe
+# Deep architectural analysis of code changes
+#
+# This recipe is designed to be composed into larger workflows
+# or run standalone for architecture-focused reviews.
+
+name: "architecture-audit"
+description: "Analyze code changes for architectural impact and design quality"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["architecture", "audit", "design", "code-review"]
+
+recursion:
+  max_depth: 2
+  max_total_steps: 25
+
+context:
+  # Input
+  changed_files: []           # List of {path, additions, deletions, diff}
+
+  # Configuration
+  check_patterns: true
+  check_dependencies: true
+  check_boundaries: true
+  check_scalability: true
+
+steps:
+  # ============================================================
+  # Stage 1: Gather Codebase Context
+  # ============================================================
+  - id: "gather-context"
+    agent: "foundation:explorer"
+    prompt: |
+      Gather architectural context for the changed files.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Context to Gather
+
+      1. **Module Structure**
+         - What modules are these files in?
+         - What are the module boundaries?
+         - How do modules relate?
+
+      2. **Existing Patterns**
+         - What patterns are used in this area?
+         - What conventions exist?
+         - What abstractions are in place?
+
+      3. **Dependencies**
+         - What does this code depend on?
+         - What depends on this code?
+         - External vs internal dependencies
+
+      Return:
+      - module_context: {module_name, purpose, boundaries}
+      - existing_patterns: [pattern descriptions]
+      - dependency_graph: {depends_on: [], depended_by: []}
+      - conventions: [relevant conventions]
+    output: "arch_context"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Pattern Analysis
+  # ============================================================
+  - id: "pattern-analysis"
+    condition: "{{check_patterns}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Analyze design patterns in the changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Context
+      {{arch_context}}
+
+      ## Analysis
+
+      ### 1. Pattern Usage
+      - What patterns are being used?
+      - Are they applied correctly?
+      - Are they appropriate for this context?
+
+      ### 2. Pattern Consistency
+      - Do these changes follow existing patterns?
+      - Are new patterns being introduced?
+      - Is there pattern drift?
+
+      ### 3. Anti-Patterns
+      - God objects/classes
+      - Tight coupling
+      - Feature envy
+      - Inappropriate intimacy
+      - Shotgun surgery setup
+
+      ### 4. Simplicity Assessment
+      - Is this over-engineered?
+      - Could simpler solutions work?
+      - Is complexity proportional to problem?
+
+      For each finding:
+      - type: pattern | antipattern | inconsistency | overengineering
+      - file: path
+      - description: what's happening
+      - impact: why it matters
+      - severity: high | medium | low
+      - suggestion: recommended approach
+    output: "pattern_findings"
+    timeout: 240
+
+  # ============================================================
+  # Stage 3: Dependency Analysis
+  # ============================================================
+  - id: "dependency-analysis"
+    condition: "{{check_dependencies}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze dependency relationships in the changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Context
+      {{arch_context}}
+
+      ## Analysis
+
+      ### 1. Coupling Assessment
+      - Are new dependencies appropriate?
+      - Is coupling too tight?
+      - Can dependencies be inverted?
+
+      ### 2. Circular Dependencies
+      - Do changes create circular dependencies?
+      - Module-level cycles?
+      - Package-level cycles?
+
+      ### 3. Dependency Direction
+      - Do dependencies flow correctly? (down the layers)
+      - Are stable dependencies preferred?
+      - Are volatile dependencies isolated?
+
+      ### 4. External Dependencies
+      - Are external deps appropriate?
+      - Are they properly abstracted?
+      - Can they be swapped easily?
+
+      For each finding:
+      - type: coupling | circular | direction | external
+      - from_module: source
+      - to_module: target
+      - severity: high | medium | low
+      - description: the dependency issue
+      - suggestion: how to improve
+    output: "dependency_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 4: Boundary Analysis
+  # ============================================================
+  - id: "boundary-analysis"
+    condition: "{{check_boundaries}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Analyze module and layer boundary integrity.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Context
+      {{arch_context}}
+
+      ## Analysis
+
+      ### 1. Module Boundaries
+      - Are module boundaries respected?
+      - Is there boundary erosion?
+      - Are interfaces clean?
+
+      ### 2. Layer Violations
+      - UI accessing database directly?
+      - Business logic in controllers?
+      - Data layer with presentation logic?
+
+      ### 3. Encapsulation
+      - Are internals properly hidden?
+      - Is the public API minimal?
+      - Are implementation details leaking?
+
+      ### 4. Cohesion
+      - Does this belong in this module?
+      - Is functionality properly grouped?
+      - Would extraction improve design?
+
+      For each finding:
+      - type: boundary | layer | encapsulation | cohesion
+      - location: where the violation occurs
+      - violation: what's wrong
+      - severity: high | medium | low
+      - suggestion: how to fix
+    output: "boundary_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 5: Scalability Analysis
+  # ============================================================
+  - id: "scalability-analysis"
+    condition: "{{check_scalability}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze scalability implications of changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Context
+      {{arch_context}}
+
+      ## Analysis
+
+      ### 1. Data Scalability
+      - How does this behave with large datasets?
+      - O(n), O(n^2), or worse patterns?
+      - Pagination considerations?
+
+      ### 2. Concurrency
+      - Thread safety concerns?
+      - Race condition potential?
+      - Deadlock risks?
+
+      ### 3. Resource Usage
+      - Memory growth patterns?
+      - Connection pool impact?
+      - File handle usage?
+
+      ### 4. Horizontal Scaling
+      - Will this work across multiple instances?
+      - Shared state concerns?
+      - Stateless design?
+
+      For each finding:
+      - type: data | concurrency | resource | horizontal
+      - description: the scalability concern
+      - current_scale: works at what scale
+      - breaking_scale: fails at what scale
+      - severity: high | medium | low
+      - suggestion: how to improve
+    output: "scalability_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 6: Synthesize Architecture Report
+  # ============================================================
+  - id: "synthesize-architecture"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Synthesize all architectural findings.
+
+      ## Findings
+      - Patterns: {{pattern_findings}}
+      - Dependencies: {{dependency_findings}}
+      - Boundaries: {{boundary_findings}}
+      - Scalability: {{scalability_findings}}
+
+      ## Context
+      {{arch_context}}
+
+      ## Tasks
+
+      1. **Assess Overall Impact**: How do changes affect architecture?
+      2. **Identify Technical Debt**: What debt is being added?
+      3. **Recommend Actions**: What should be addressed?
+
+      ## Output
+
+      Return:
+      - architectural_impact: low | medium | high | critical
+      - blocking_issues: [{...}] (must fix before merge)
+      - debt_introduced: [{...}] (tech debt being added)
+      - recommendations: [{...}] (suggested improvements)
+      - positive_changes: [{...}] (architectural improvements)
+      - summary: overall architectural assessment
+      - long_term_concerns: issues that may compound over time
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Standalone:
+#   amplifier run "execute recipes/audits/architecture-audit.yaml with changed_files=..."
+#
+# Pattern focus:
+#   amplifier run "execute recipes/audits/architecture-audit.yaml with check_scalability=false"
+#
+# From pr-reviewer (thorough mode):
+#   - type: "recipe"
+#     condition: "{{depth}} == 'thorough'"
+#     recipe: "audits/architecture-audit.yaml"
+#     context:
+#       changed_files: "{{pr_context.changed_files}}"
+#
+# ============================================================

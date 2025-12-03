@@ -1,0 +1,420 @@
+# Documentation Auditor Recipe
+# Find outdated docs, doc-code consistency issues
+#
+# Priority: P2 (Enhancement)
+#
+# This recipe demonstrates:
+# - Multi-source correlation
+# - Quality scoring across dimensions
+# - Automated fix suggestions
+
+name: "documentation-auditor"
+description: "Audit documentation for currency, accuracy, completeness, and consistency with code"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["documentation", "audit", "quality", "maintenance"]
+
+recursion:
+  max_depth: 3
+  max_total_steps: 60
+
+context:
+  # Documentation sources
+  doc_paths: ["docs/", "*.md", "README*"]
+  exclude_paths: ["node_modules", ".venv", "CHANGELOG*"]
+
+  # Code sources (for consistency checking)
+  code_paths: ["src/", "lib/"]
+
+  # Audit configuration
+  check_currency: true           # Check if docs are up to date
+  check_accuracy: true           # Check if docs match code
+  check_completeness: true       # Check for missing docs
+  check_quality: true            # Check writing quality
+
+  # Thresholds
+  stale_days: 180                # Days since update to flag as stale
+  min_quality_score: 7           # Minimum quality score (1-10)
+
+steps:
+  # ============================================================
+  # Stage 1: Discover Documentation
+  # ============================================================
+  - id: "discover-docs"
+    agent: "foundation:explorer"
+    prompt: |
+      Discover all documentation in the project.
+
+      ## Doc Paths: {{doc_paths}}
+      ## Exclude: {{exclude_paths}}
+
+      ## Discovery Tasks
+
+      1. **Find Documentation Files**
+         - Markdown files
+         - README files
+         - API documentation
+         - Architecture docs (ADRs)
+         - Inline code docs
+
+      2. **Categorize Documents**
+         - User documentation
+         - Developer documentation
+         - API reference
+         - Architecture decisions
+         - Guides/tutorials
+
+      3. **Gather Metadata**
+         - Last modified date
+         - Author (from git)
+         - Size/length
+         - Links contained
+
+      Return:
+      - documents: [{path, type, category, last_modified, author, word_count}]
+      - by_category: {user: [], developer: [], api: [], architecture: [], guides: []}
+      - total_docs: count
+      - total_words: count
+      - oldest_docs: [paths with oldest last_modified]
+    output: "discovered_docs"
+    timeout: 180
+
+  # ============================================================
+  # Stage 2: Check Currency (Staleness)
+  # ============================================================
+  - id: "check-currency"
+    condition: "{{check_currency}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Check documentation currency and staleness.
+
+      ## Documents: {{discovered_docs}}
+      ## Stale Threshold: {{stale_days}} days
+
+      ## Currency Checks
+
+      1. **Last Update Analysis**
+         - When was each doc last modified?
+         - What was the context of last update?
+         - Who last updated it?
+
+      2. **Related Code Changes**
+         - Has code this doc references changed since doc update?
+         - What files does the doc reference?
+         - Have those files changed?
+
+      3. **Link Freshness**
+         - Are external links still valid?
+         - Are internal links still valid?
+         - Are code references still accurate?
+
+      4. **Staleness Indicators**
+         - References to old versions
+         - Deprecated API mentions
+         - Outdated screenshots/examples
+
+      Return:
+      - stale_docs: [{path, last_updated, days_old, staleness_indicators}]
+      - probably_outdated: [{path, reason, related_code_changes}]
+      - broken_links: [{doc, link, type, error}]
+      - fresh_docs: [paths recently updated]
+    output: "currency_results"
+    timeout: 300
+
+  # ============================================================
+  # Stage 3: Check Accuracy (Code Consistency)
+  # ============================================================
+  - id: "check-accuracy"
+    condition: "{{check_accuracy}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Check documentation accuracy against code.
+
+      ## Documents: {{discovered_docs}}
+      ## Code Paths: {{code_paths}}
+
+      ## Accuracy Checks
+
+      1. **API Documentation vs Code**
+         - Do documented endpoints exist?
+         - Are parameters correct?
+         - Are return types accurate?
+         - Are examples valid?
+
+      2. **Code Examples**
+         - Do code snippets compile/run?
+         - Are imports correct?
+         - Are function signatures current?
+
+      3. **Configuration Documentation**
+         - Are env vars documented correctly?
+         - Are config options accurate?
+         - Are defaults documented?
+
+      4. **Architecture Descriptions**
+         - Does described architecture match code?
+         - Are component names correct?
+         - Are flows accurate?
+
+      Return:
+      - inaccuracies: [{doc, section, claim, reality, severity}]
+      - outdated_examples: [{doc, example, issue, fix}]
+      - missing_updates: [{doc, code_change, doc_update_needed}]
+      - accurate_docs: [paths that are accurate]
+    output: "accuracy_results"
+    timeout: 360
+
+  # ============================================================
+  # Stage 4: Check Completeness
+  # ============================================================
+  - id: "check-completeness"
+    condition: "{{check_completeness}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Check documentation completeness.
+
+      ## Documents: {{discovered_docs}}
+      ## Code Paths: {{code_paths}}
+
+      ## Completeness Checks
+
+      1. **Public API Coverage**
+         - Are all public functions documented?
+         - Are all endpoints documented?
+         - Are all config options documented?
+
+      2. **Use Case Coverage**
+         - Common use cases documented?
+         - Edge cases mentioned?
+         - Error handling explained?
+
+      3. **Onboarding Coverage**
+         - Getting started guide exists?
+         - Prerequisites documented?
+         - Installation steps clear?
+
+      4. **Architecture Coverage**
+         - System overview exists?
+         - Component responsibilities clear?
+         - Data flows documented?
+
+      5. **Missing Documents**
+         - Directories without README
+         - Complex code without explanation
+         - Public modules without docs
+
+      Return:
+      - undocumented_apis: [{module, function, type, importance}]
+      - missing_guides: [{topic, evidence_of_need, priority}]
+      - incomplete_docs: [{doc, missing_sections}]
+      - coverage_score: percentage of public APIs documented
+    output: "completeness_results"
+    timeout: 300
+
+  # ============================================================
+  # Stage 5: Check Quality
+  # ============================================================
+  - id: "check-quality"
+    condition: "{{check_quality}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "REVIEW"
+    prompt: |
+      Check documentation quality.
+
+      ## Documents: {{discovered_docs}}
+      ## Minimum Score: {{min_quality_score}}
+
+      ## Quality Dimensions
+
+      1. **Clarity**
+         - Clear language
+         - No jargon without explanation
+         - Logical flow
+         - Good headings
+
+      2. **Structure**
+         - Consistent formatting
+         - Proper hierarchy
+         - Table of contents (for long docs)
+         - Good use of lists/tables
+
+      3. **Completeness** (per document)
+         - Introduction/overview
+         - Prerequisites
+         - Step-by-step instructions
+         - Examples
+         - Troubleshooting
+
+      4. **Accuracy** (writing)
+         - Grammar
+         - Spelling
+         - Consistent terminology
+         - Active voice
+
+      5. **Usability**
+         - Easy to scan
+         - Good code examples
+         - Copy-pasteable commands
+         - Links to related docs
+
+      ## Scoring
+
+      Score each document 1-10 overall and per dimension.
+
+      Return:
+      - quality_scores: [{doc, overall, clarity, structure, completeness, accuracy, usability}]
+      - below_threshold: [{doc, score, main_issues}]
+      - quality_issues: [{doc, issue, category, suggestion}]
+      - best_examples: [docs that exemplify good quality]
+    output: "quality_results"
+    timeout: 300
+
+  # ============================================================
+  # Stage 6: Generate Fix Suggestions
+  # ============================================================
+  - id: "generate-suggestions"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate specific fix suggestions for documentation issues.
+
+      ## Issues Found
+      - Currency: {{currency_results}}
+      - Accuracy: {{accuracy_results}}
+      - Completeness: {{completeness_results}}
+      - Quality: {{quality_results}}
+
+      ## For Each Issue
+
+      Generate actionable fix suggestion:
+
+      1. **What**: Specific change needed
+      2. **Where**: Exact location (file, section)
+      3. **How**: Detailed instructions
+      4. **Why**: Impact of not fixing
+      5. **Effort**: Estimated time to fix
+      6. **Priority**: Based on impact and effort
+
+      ## Grouping
+
+      Group suggestions by:
+      - Quick fixes (< 30 min)
+      - Medium effort (30 min - 2 hours)
+      - Significant work (> 2 hours)
+
+      Return:
+      - fix_suggestions: [{id, doc, issue, fix, effort_minutes, priority}]
+      - quick_fixes: [suggestions < 30 min]
+      - medium_fixes: [suggestions 30min-2hr]
+      - major_work: [suggestions > 2hr]
+      - auto_fixable: [issues that could be auto-fixed]
+    output: "fix_suggestions"
+    timeout: 240
+
+  # ============================================================
+  # Stage 7: Generate Audit Report
+  # ============================================================
+  - id: "generate-report"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate comprehensive documentation audit report.
+
+      ## All Results
+      - Documents: {{discovered_docs}}
+      - Currency: {{currency_results}}
+      - Accuracy: {{accuracy_results}}
+      - Completeness: {{completeness_results}}
+      - Quality: {{quality_results}}
+      - Fixes: {{fix_suggestions}}
+
+      ## Report Structure
+
+      # Documentation Audit Report
+
+      ## Executive Summary
+      - Total documents audited
+      - Overall health score
+      - Critical issues count
+      - Top recommendations
+
+      ## Health Metrics
+
+      | Metric | Score | Status |
+      |--------|-------|--------|
+      | Currency | X% | ... |
+      | Accuracy | X% | ... |
+      | Completeness | X% | ... |
+      | Quality | X/10 | ... |
+
+      ## Issues by Category
+
+      ### Currency Issues
+      - Stale documents list
+      - Broken links
+      - Outdated references
+
+      ### Accuracy Issues
+      - Code-doc mismatches
+      - Outdated examples
+      - Wrong API descriptions
+
+      ### Completeness Gaps
+      - Undocumented APIs
+      - Missing guides
+      - Incomplete sections
+
+      ### Quality Issues
+      - Below-threshold docs
+      - Common problems
+      - Improvement areas
+
+      ## Recommendations
+
+      ### Immediate (This Week)
+      - Critical fixes
+      - Quick wins
+
+      ### Short-term (This Month)
+      - Medium effort improvements
+      - Process improvements
+
+      ### Long-term (This Quarter)
+      - Major documentation initiatives
+      - Structural improvements
+
+      ## Appendix
+      - Full document inventory
+      - Detailed scores
+      - All fix suggestions
+
+      Return:
+      - report: full markdown document
+      - health_score: overall 1-100
+      - metrics: {currency, accuracy, completeness, quality}
+      - critical_issues: count
+      - action_items: [{item, priority, owner, deadline}]
+    output: "audit_report"
+    timeout: 240
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Full audit:
+#   amplifier run "execute recipes/documentation-auditor.yaml"
+#
+# Quick currency check only:
+#   amplifier run "execute recipes/documentation-auditor.yaml with check_accuracy=false check_completeness=false check_quality=false"
+#
+# Strict quality threshold:
+#   amplifier run "execute recipes/documentation-auditor.yaml with min_quality_score=8"
+#
+# Custom paths:
+#   amplifier run "execute recipes/documentation-auditor.yaml with doc_paths='[\"documentation/\"]' code_paths='[\"app/\"]'"
+#
+# Recently stale only:
+#   amplifier run "execute recipes/documentation-auditor.yaml with stale_days=90"
+#
+# ============================================================

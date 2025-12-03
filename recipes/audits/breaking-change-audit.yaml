@@ -1,0 +1,246 @@
+# Breaking Change Audit Sub-Recipe
+# Detect API and behavioral changes that could break consumers
+#
+# This recipe is designed to be composed into larger workflows
+# or run standalone for compatibility analysis.
+
+name: "breaking-change-audit"
+description: "Detect breaking changes in APIs, contracts, and behavior"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["breaking-change", "api", "compatibility", "audit"]
+
+recursion:
+  max_depth: 2
+  max_total_steps: 20
+
+context:
+  # Input
+  changed_files: []           # List of {path, additions, deletions, diff}
+
+  # Configuration
+  check_api: true
+  check_database: true
+  check_config: true
+  check_behavior: true
+
+steps:
+  # ============================================================
+  # Stage 1: API Breaking Changes
+  # ============================================================
+  - id: "api-changes"
+    condition: "{{check_api}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Analyze API changes for breaking compatibility.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Breaking Change Categories
+
+      ### 1. Endpoint Changes
+      - Removed endpoints
+      - Changed URL paths
+      - Changed HTTP methods
+      - Changed authentication requirements
+
+      ### 2. Request Changes
+      - Removed required parameters
+      - Changed parameter types
+      - New required parameters (without defaults)
+      - Changed validation rules (stricter)
+
+      ### 3. Response Changes
+      - Removed fields from response
+      - Changed field types
+      - Changed field meanings
+      - Changed status codes
+
+      ### 4. Error Handling
+      - New error codes consumers don't handle
+      - Changed error response format
+      - Removed error codes (if consumers check them)
+
+      For each finding:
+      - type: endpoint | request | response | error
+      - file: path
+      - line: number
+      - before: what it was
+      - after: what it is now
+      - severity: critical (always breaking) | high (likely breaking)
+      - migration_path: how consumers should adapt
+      - deprecation_possible: boolean (can we deprecate instead?)
+    output: "api_findings"
+    timeout: 240
+
+  # ============================================================
+  # Stage 2: Database Schema Changes
+  # ============================================================
+  - id: "database-changes"
+    condition: "{{check_database}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Analyze database schema changes for breaking compatibility.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Breaking Change Categories
+
+      ### 1. Schema Changes
+      - Dropped columns
+      - Dropped tables
+      - Changed column types (narrowing)
+      - Added NOT NULL without default
+      - Changed primary keys
+      - Removed indexes (performance breaking)
+
+      ### 2. Migration Issues
+      - Data loss potential
+      - Lock duration (large table changes)
+      - Backwards incompatible migrations
+
+      ### 3. Query Impact
+      - Changed stored procedures
+      - Changed views
+      - Changed triggers
+
+      For each finding:
+      - type: schema | migration | query
+      - file: path
+      - table: affected table
+      - change: what changed
+      - severity: critical | high | medium
+      - data_loss_risk: boolean
+      - rollback_possible: boolean
+      - migration_strategy: safe approach
+    output: "database_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 3: Configuration Changes
+  # ============================================================
+  - id: "config-changes"
+    condition: "{{check_config}} == 'true'"
+    agent: "foundation:explorer"
+    prompt: |
+      Analyze configuration changes for breaking compatibility.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Breaking Change Categories
+
+      ### 1. Environment Variables
+      - Removed required env vars
+      - Changed env var meanings
+      - New required env vars (no default)
+
+      ### 2. Config File Changes
+      - Changed config schema
+      - Removed config options
+      - Changed default values (behavior change)
+
+      ### 3. Feature Flags
+      - Removed feature flags
+      - Changed flag defaults
+      - Changed flag behavior
+
+      For each finding:
+      - type: env | config | feature_flag
+      - file: path
+      - setting: what changed
+      - before: previous value/behavior
+      - after: new value/behavior
+      - severity: high | medium
+      - migration_required: what consumers need to do
+    output: "config_findings"
+    timeout: 120
+
+  # ============================================================
+  # Stage 4: Behavioral Changes
+  # ============================================================
+  - id: "behavior-changes"
+    condition: "{{check_behavior}} == 'true'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Analyze behavioral changes that might break consumers.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Behavioral Breaking Changes
+
+      ### 1. Logic Changes
+      - Different output for same input
+      - Changed side effects
+      - Changed timing/ordering guarantees
+      - Changed error behavior
+
+      ### 2. Performance Changes
+      - Significant slowdown
+      - Increased resource usage
+      - Changed rate limits
+
+      ### 3. Security Changes
+      - Stricter validation
+      - New permission requirements
+      - Changed auth flows
+
+      For each finding:
+      - type: logic | performance | security
+      - file: path
+      - function: affected function/method
+      - before_behavior: how it worked
+      - after_behavior: how it works now
+      - severity: critical | high | medium
+      - documented: is this an intentional documented change?
+      - migration_guide: how to adapt
+    output: "behavior_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 5: Synthesize Breaking Change Report
+  # ============================================================
+  - id: "synthesize-breaking"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Synthesize all breaking change findings.
+
+      ## Findings
+      - API: {{api_findings}}
+      - Database: {{database_findings}}
+      - Config: {{config_findings}}
+      - Behavior: {{behavior_findings}}
+
+      ## Tasks
+
+      1. **Categorize**: Group by impact type
+      2. **Prioritize**: Sort by consumer impact
+      3. **Migration Plan**: Create comprehensive migration guide
+
+      ## Output
+
+      Return:
+      - breaking_changes: [{...}] (definitely breaking)
+      - potential_breaks: [{...}] (might break some consumers)
+      - safe_changes: [{...}] (backward compatible)
+      - requires_major_version: boolean
+      - requires_migration_guide: boolean
+      - migration_summary: step-by-step migration for consumers
+      - deprecation_candidates: things that could be deprecated instead
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Standalone:
+#   amplifier run "execute recipes/audits/breaking-change-audit.yaml with changed_files=..."
+#
+# API only:
+#   amplifier run "execute recipes/audits/breaking-change-audit.yaml with check_database=false check_config=false"
+#
+# ============================================================

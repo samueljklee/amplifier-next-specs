@@ -1,0 +1,386 @@
+# Incident Responder Recipe
+# Automated incident response workflow with parallel context gathering
+#
+# Priority: P0 (Critical Path)
+# Replaces: scenario-tools/incident-responder.md (Python implementation)
+#
+# This recipe demonstrates:
+# - Parallel context gathering (multiple sources simultaneously)
+# - Conditional escalation paths
+# - Multi-hypothesis diagnosis
+# - Timeline documentation throughout
+
+name: "incident-responder"
+description: "Automated incident analysis with context gathering, diagnosis, and remediation suggestions"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["incident", "oncall", "debugging", "observability"]
+
+recursion:
+  max_depth: 5
+  max_total_steps: 75
+
+context:
+  # Alert input (at least one required)
+  alert_id: ""              # PagerDuty/OpsGenie alert ID
+  alert_summary: ""         # Free-text description if no alert system
+  service_name: ""          # Affected service (optional, can be inferred)
+
+  # Configuration
+  lookback_hours: 4         # How far back to search logs/metrics
+  deploy_lookback_hours: 24 # How far back to check deployments
+  auto_remediate: false     # Allow automated remediation (with approval)
+
+  # External integrations (configured via secrets)
+  metrics_provider: "datadog"    # datadog | prometheus | cloudwatch
+  log_provider: "datadog"        # datadog | elasticsearch | cloudwatch
+
+steps:
+  # ============================================================
+  # Stage 1: Initialize Incident
+  # ============================================================
+  - id: "initialize-incident"
+    agent: "foundation:explorer"
+    prompt: |
+      Initialize incident tracking for:
+      - Alert ID: {{alert_id}}
+      - Summary: {{alert_summary}}
+      - Service: {{service_name}}
+
+      Create incident record with:
+      - incident_id: generated UUID
+      - started_at: current timestamp
+      - status: "investigating"
+      - severity: inferred from alert (P1-P4)
+      - affected_service: {{service_name}} or inferred
+      - timeline: [{"time": now, "event": "Incident opened", "actor": "amplifier"}]
+
+      Return structured incident object.
+    output: "incident"
+    timeout: 30
+
+  # ============================================================
+  # Stage 2: Parallel Context Gathering
+  # ============================================================
+  - id: "gather-recent-deploys"
+    agent: "foundation:explorer"
+    prompt: |
+      Find all deployments in the last {{deploy_lookback_hours}} hours for service: {{incident.affected_service}}
+
+      Check sources:
+      - GitHub Actions deployment workflows
+      - ArgoCD sync events
+      - Kubernetes rollout history
+      - CI/CD pipeline runs
+
+      Return list of deployments:
+      - deploy_id
+      - timestamp
+      - version (before → after)
+      - author
+      - commit_sha
+      - changes_summary
+    output: "recent_deploys"
+    timeout: 120
+
+  - id: "gather-metrics"
+    agent: "developer-expertise:bug-hunter"
+    prompt: |
+      Query metrics for {{incident.affected_service}} over last {{lookback_hours}} hours.
+
+      Provider: {{metrics_provider}}
+
+      Metrics to gather:
+      1. Error rate (HTTP 5xx, exceptions)
+      2. Latency (p50, p95, p99)
+      3. Request volume
+      4. CPU/Memory utilization
+      5. Database connection pool
+      6. Queue depths (if applicable)
+
+      Identify:
+      - When anomalies started
+      - Correlation between metrics
+      - Any threshold breaches
+
+      Return structured metrics with timestamps and anomaly markers.
+    output: "metrics_data"
+    timeout: 180
+
+  - id: "gather-logs"
+    agent: "developer-expertise:bug-hunter"
+    prompt: |
+      Search logs for {{incident.affected_service}} over last {{lookback_hours}} hours.
+
+      Provider: {{log_provider}}
+
+      Focus on:
+      - ERROR and FATAL level logs
+      - Exception stack traces
+      - Timeout messages
+      - Connection refused errors
+      - Any unusual patterns
+
+      Return:
+      - error_patterns: [{pattern, count, first_seen, example}]
+      - notable_events: [{timestamp, message, severity}]
+      - log_volume_anomaly: boolean
+    output: "log_data"
+    timeout: 180
+
+  - id: "gather-related-alerts"
+    agent: "foundation:explorer"
+    prompt: |
+      Find related alerts that fired around the same time as {{incident.incident_id}}.
+
+      Search window: {{incident.started_at}} ± 30 minutes
+
+      Look for:
+      - Alerts on dependent services
+      - Infrastructure alerts (database, cache, queue)
+      - Network/connectivity alerts
+      - Similar alerts in the past (last 30 days)
+
+      Return:
+      - concurrent_alerts: [{alert_id, service, summary, time}]
+      - similar_past_incidents: [{incident_id, date, resolution, similarity_score}]
+    output: "related_alerts"
+    timeout: 120
+
+  # ============================================================
+  # Stage 3: Correlate and Diagnose
+  # ============================================================
+  - id: "correlate-timeline"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Correlate all gathered data into a unified timeline.
+
+      ## Data Sources
+      - Incident start: {{incident.started_at}}
+      - Recent deployments: {{recent_deploys}}
+      - Metrics anomalies: {{metrics_data}}
+      - Log patterns: {{log_data}}
+      - Related alerts: {{related_alerts}}
+
+      ## Task
+      Create a correlated timeline:
+      1. Place all events on a single timeline
+      2. Identify the probable trigger event
+      3. Trace the cascade of effects
+      4. Mark the "point of no return" (when users affected)
+
+      Return:
+      - timeline: [{timestamp, event_type, description, source, significance}]
+      - probable_trigger: {timestamp, event, confidence}
+      - cascade_pattern: string description
+    output: "correlated_timeline"
+    timeout: 180
+
+  - id: "generate-hypotheses"
+    agent: "developer-expertise:bug-hunter"
+    prompt: |
+      Generate diagnostic hypotheses based on correlated data.
+
+      ## Evidence
+      Timeline: {{correlated_timeline}}
+      Deploy history: {{recent_deploys}}
+      Error patterns: {{log_data.error_patterns}}
+      Metrics: {{metrics_data}}
+
+      ## Hypothesis Categories
+      For each applicable category, generate a hypothesis:
+
+      1. **deployment_issue**: Recent deploy caused the problem
+      2. **configuration_error**: Config change or drift
+      3. **capacity_problem**: Resource exhaustion
+      4. **dependency_failure**: External service/database issue
+      5. **code_bug**: Logic error in application
+      6. **external_factor**: Network, cloud provider, etc.
+
+      For each hypothesis:
+      - category: string
+      - description: what might have happened
+      - confidence: 0-100
+      - evidence: list of supporting data points
+      - contradicting_evidence: list of data that doesn't fit
+      - verification_steps: how to confirm/deny
+      - suggested_remediation: if confirmed, what to do
+
+      Rank hypotheses by confidence.
+    output: "hypotheses"
+    timeout: 240
+
+  # ============================================================
+  # Stage 4: Primary Diagnosis
+  # ============================================================
+  - id: "select-primary-diagnosis"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Select the most likely root cause from hypotheses.
+
+      Hypotheses (ranked by confidence):
+      {{hypotheses}}
+
+      Correlated timeline:
+      {{correlated_timeline}}
+
+      ## Decision Criteria
+      1. Highest confidence hypothesis
+      2. Best explains the timeline
+      3. Fewest contradicting evidence points
+      4. Most actionable remediation
+
+      Return:
+      - primary_hypothesis: the selected hypothesis
+      - secondary_hypotheses: other plausible explanations
+      - confidence: overall confidence in diagnosis
+      - remaining_unknowns: what we still don't know
+    output: "diagnosis"
+    timeout: 120
+
+  # ============================================================
+  # Stage 5: Remediation Suggestions
+  # ============================================================
+  - id: "suggest-remediation"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Suggest remediation actions based on diagnosis.
+
+      Primary diagnosis: {{diagnosis.primary_hypothesis}}
+      Confidence: {{diagnosis.confidence}}
+
+      ## Generate Remediation Plan
+
+      For each action:
+      - action_type: rollback | scale | config_revert | restart | code_fix | escalate
+      - description: what to do
+      - command: exact command if applicable
+      - risk: low | medium | high
+      - expected_impact: what should improve
+      - verification: how to confirm it worked
+      - require_approval: boolean ({{auto_remediate}} determines threshold)
+
+      Prioritize by:
+      1. Speed to resolution
+      2. Risk of making things worse
+      3. Reversibility
+
+      Return:
+      - immediate_actions: [{...}] (do now)
+      - followup_actions: [{...}] (after immediate)
+      - communication_plan: what to tell stakeholders
+    output: "remediation_plan"
+    timeout: 180
+
+  # ============================================================
+  # Stage 6: Generate Status Update
+  # ============================================================
+  - id: "generate-status-update"
+    agent: "developer-expertise:zen-architect"
+    prompt: |
+      Generate incident status update for Slack/Teams.
+
+      ## Incident Data
+      - ID: {{incident.incident_id}}
+      - Service: {{incident.affected_service}}
+      - Severity: {{incident.severity}}
+      - Duration: (calculate from {{incident.started_at}})
+
+      ## Diagnosis
+      {{diagnosis}}
+
+      ## Remediation Plan
+      {{remediation_plan}}
+
+      ## Format
+      Create a Slack message with:
+      1. 🚨 Header with severity and service
+      2. **Status**: Investigating | Identified | Monitoring | Resolved
+      3. **Summary**: 2-3 sentences on what's happening
+      4. **Impact**: Who/what is affected
+      5. **Root Cause**: Current hypothesis (with confidence)
+      6. **Next Steps**: Immediate actions being taken
+      7. **Timeline**: Key events (collapsible)
+      8. 🤖 Footer: "Generated by Incident Responder"
+    output: "status_update"
+    timeout: 60
+
+  # ============================================================
+  # Stage 7: Generate Postmortem Draft (if resolved)
+  # ============================================================
+  - id: "generate-postmortem-draft"
+    condition: "{{diagnosis.confidence}} == 'high'"
+    agent: "developer-expertise:zen-architect"
+    mode: "ARCHITECT"
+    prompt: |
+      Generate postmortem draft for this incident.
+
+      ## Incident Data
+      {{incident}}
+
+      ## Timeline
+      {{correlated_timeline}}
+
+      ## Diagnosis
+      {{diagnosis}}
+
+      ## Remediation
+      {{remediation_plan}}
+
+      ## Postmortem Template
+
+      # Postmortem: {{incident.affected_service}} Incident
+
+      ## Summary
+      (One paragraph: what happened, impact, resolution)
+
+      ## Impact
+      - Duration: X minutes
+      - Users affected: estimate
+      - Requests failed: estimate
+      - Revenue impact: if known
+
+      ## Timeline
+      (Formatted timeline of key events)
+
+      ## Root Cause
+      (Technical explanation)
+
+      ## Resolution
+      (What was done to fix it)
+
+      ## Lessons Learned
+      - What went well
+      - What went poorly
+      - Where we got lucky
+
+      ## Action Items
+      | Action | Owner | Priority | Due Date |
+      |--------|-------|----------|----------|
+      (Generate based on diagnosis and gaps found)
+
+      ## Appendix
+      - Key log entries
+      - Metrics charts (placeholders)
+      - Related documentation
+    output: "postmortem_draft"
+    timeout: 240
+    on_error: "continue"
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# From PagerDuty alert:
+#   amplifier run "execute recipes/incident-responder.yaml with alert_id=P123ABC"
+#
+# From manual report:
+#   amplifier run "execute recipes/incident-responder.yaml with alert_summary='Payment API returning 500s' service_name=payment-api"
+#
+# Extended lookback:
+#   amplifier run "execute recipes/incident-responder.yaml with alert_id=... lookback_hours=8"
+#
+# ============================================================

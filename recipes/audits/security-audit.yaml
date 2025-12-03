@@ -1,0 +1,202 @@
+# Security Audit Sub-Recipe
+# Reusable security analysis for code changes
+#
+# This recipe is designed to be composed into larger workflows
+# or run standalone for security-focused reviews.
+
+name: "security-audit"
+description: "Analyze code changes for security vulnerabilities and risks"
+version: "1.0.0"
+author: "Platform Team"
+tags: ["security", "audit", "vulnerability", "code-review"]
+
+recursion:
+  max_depth: 2
+  max_total_steps: 20
+
+context:
+  # Input
+  changed_files: []           # List of {path, additions, deletions, diff}
+  severity_threshold: "medium" # low | medium | high | critical
+
+  # Configuration
+  include_dependency_check: true
+  check_secrets: true
+  check_injection: true
+  check_auth: true
+
+steps:
+  # ============================================================
+  # Stage 1: Static Security Analysis
+  # ============================================================
+  - id: "static-analysis"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Perform static security analysis on these code changes.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Analysis Categories
+
+      ### 1. Injection Vulnerabilities (if {{check_injection}})
+      - SQL injection patterns
+      - Command injection risks
+      - XSS vectors (script injection, event handlers)
+      - Path traversal vulnerabilities
+      - Template injection
+
+      ### 2. Authentication/Authorization (if {{check_auth}})
+      - Missing auth checks
+      - Broken access control
+      - Session management issues
+      - Privilege escalation risks
+
+      ### 3. Data Exposure
+      - Sensitive data in logs
+      - PII handling issues
+      - Improper error messages (info leakage)
+
+      ### 4. Cryptography
+      - Weak algorithms (MD5, SHA1 for security)
+      - Hardcoded keys/salts
+      - Insecure random number generation
+
+      For each finding:
+      - type: vulnerability category
+      - file: path
+      - line: number
+      - severity: critical | high | medium | low
+      - cwe: CWE ID if applicable
+      - description: what's vulnerable
+      - exploitation: how it could be exploited
+      - fix: suggested remediation
+    output: "static_findings"
+    timeout: 300
+
+  # ============================================================
+  # Stage 2: Secrets Detection
+  # ============================================================
+  - id: "secrets-scan"
+    condition: "{{check_secrets}} == 'true'"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Scan for hardcoded secrets and credentials.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Patterns to Detect
+
+      1. **API Keys**: AWS, GCP, Azure, Stripe, etc.
+      2. **Tokens**: JWT, OAuth, session tokens
+      3. **Passwords**: Hardcoded credentials
+      4. **Private Keys**: RSA, SSH, certificates
+      5. **Connection Strings**: Database URLs with credentials
+      6. **Webhook URLs**: Slack, Discord, etc.
+
+      ## False Positive Handling
+      - Ignore test fixtures with obviously fake values
+      - Flag anything that looks real
+      - Check for .env file patterns being committed
+
+      For each finding:
+      - type: secret category
+      - file: path
+      - line: number
+      - severity: critical (always for real secrets)
+      - pattern_matched: what triggered detection
+      - confidence: high | medium (for potential false positives)
+      - remediation: how to rotate/remove
+    output: "secrets_findings"
+    timeout: 120
+
+  # ============================================================
+  # Stage 3: Dependency Vulnerabilities
+  # ============================================================
+  - id: "dependency-check"
+    condition: "{{include_dependency_check}} == 'true'"
+    agent: "developer-expertise:security-guardian"
+    prompt: |
+      Check for dependency-related security issues.
+
+      ## Changed Files
+      {{changed_files}}
+
+      ## Analysis
+
+      1. **New Dependencies Added**
+         - Check against known CVE databases
+         - Evaluate maintainer reputation
+         - Check for typosquatting
+
+      2. **Version Changes**
+         - Downgrade risks
+         - Known vulnerabilities in new versions
+         - Breaking security fixes skipped
+
+      3. **Lock File Changes**
+         - Unexpected transitive dependency changes
+         - Supply chain risks
+
+      For each finding:
+      - package: name
+      - version: current version
+      - vulnerability: CVE ID or description
+      - severity: based on CVSS
+      - fix_version: version that fixes it
+      - workaround: if no fix available
+    output: "dependency_findings"
+    timeout: 180
+
+  # ============================================================
+  # Stage 4: Synthesize Security Report
+  # ============================================================
+  - id: "synthesize-security"
+    agent: "developer-expertise:zen-architect"
+    mode: "ANALYZE"
+    prompt: |
+      Synthesize all security findings into a prioritized report.
+
+      ## Findings
+      - Static Analysis: {{static_findings}}
+      - Secrets: {{secrets_findings}}
+      - Dependencies: {{dependency_findings}}
+
+      ## Severity Threshold: {{severity_threshold}}
+
+      ## Tasks
+
+      1. **Deduplicate**: Remove duplicate findings
+      2. **Prioritize**: Sort by severity and exploitability
+      3. **Filter**: Only include findings at or above threshold
+      4. **Contextualize**: Add business impact assessment
+
+      ## Output
+
+      Return:
+      - critical_findings: [{...}] (must block merge)
+      - high_findings: [{...}] (should block merge)
+      - medium_findings: [{...}] (review recommended)
+      - low_findings: [{...}] (nice to fix)
+      - summary: overall security posture assessment
+      - blocking: boolean (any critical/high findings?)
+      - recommendations: prioritized fix order
+
+# ============================================================
+# Usage Examples
+# ============================================================
+#
+# Standalone:
+#   amplifier run "execute recipes/audits/security-audit.yaml with changed_files=..."
+#
+# As sub-recipe (from pr-reviewer):
+#   - type: "recipe"
+#     recipe: "audits/security-audit.yaml"
+#     context:
+#       changed_files: "{{pr_context.changed_files}}"
+#
+# High severity only:
+#   amplifier run "execute recipes/audits/security-audit.yaml with severity_threshold=high"
+#
+# ============================================================
