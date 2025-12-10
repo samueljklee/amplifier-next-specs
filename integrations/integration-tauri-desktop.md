@@ -389,6 +389,43 @@ npm run dev:all  # Start full stack
 
 ---
 
+## Comparison: Desktop vs CLI
+
+Key differences between `amplifier-desktop` and `amplifier-app-cli`:
+
+| Aspect | Desktop | CLI |
+|--------|---------|-----|
+| **Architecture** | Three-tier (React + Tauri + Python) | Single Python process |
+| **Session** | Custom LocalOrchestrator | Direct AmplifierSession |
+| **Module Loading** | LocalLoader (local/cached modes) | Module resolver (git+, collections) |
+| **Providers** | Bundled + module-cache | Entry points from packages |
+| **Config** | 2-scope JSON | 3-scope YAML with profiles |
+| **Agent Delegation** | Not implemented | Full sub-session support |
+| **Memory** | SQLite with auto-extraction | Not built-in |
+| **MCP** | Full client | Not built-in |
+
+### Desktop-Exclusive Features
+- React GUI with real-time streaming
+- MCP tool integration
+- Memory system with auto-extraction
+- Voice input/output
+- Artifacts panel
+
+### CLI-Exclusive Features
+- Profile/collection system
+- Agent delegation (sub-sessions)
+- Plan mode (read-only)
+- @mentions for context loading
+- Module-based extensibility
+
+### Convergence Opportunities
+1. Add profile system to Desktop
+2. Add agent delegation to Desktop
+3. Add MCP to CLI
+4. Add memory system to CLI
+
+---
+
 ## Open Questions
 
 1. **Session persistence**: Should sessions survive app restart? Currently they're recreated.

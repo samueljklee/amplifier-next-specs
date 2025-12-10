@@ -162,6 +162,7 @@ Additional recipes demonstrating advanced Amplifier@next capabilities:
 
 | Spec | Purpose | Priority |
 |------|---------|----------|
+| [integration-tauri-desktop](integrations/integration-tauri-desktop.md) | **Amplifier Desktop** - Native Tauri app with streaming UI | P0 |
 | [integration-vscode](integrations/integration-vscode.md) | VS Code IDE integration | P1 |
 | [integration-browser-extension](integrations/integration-browser-extension.md) | GitHub/GitLab PR review, code explanation in browser | P1 |
 | [integration-electron-app](integrations/integration-electron-app.md) | Standalone desktop app with offline support | P2 |
