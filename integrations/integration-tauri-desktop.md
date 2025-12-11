@@ -12,6 +12,28 @@ Amplifier Desktop is a Tauri-based native desktop application providing a full-f
 
 ---
 
+## Quick Links
+
+| Resource | URL |
+|----------|-----|
+| **Download** | [Latest Release (v1.1.0)](https://github.com/michaeljabbour/amplifier-desktop/releases/latest) |
+| **Getting Started** | [Installation & First Steps](https://github.com/michaeljabbour/amplifier-desktop/blob/main/docs/GETTING_STARTED.md) |
+| **User Guide** | [Complete Feature Reference](https://github.com/michaeljabbour/amplifier-desktop/blob/main/docs/USER_GUIDE.md) |
+| **Developer Guide** | [Build from Source](https://github.com/michaeljabbour/amplifier-desktop/blob/main/docs/DEVELOPERS.md) |
+| **GitHub** | [michaeljabbour/amplifier-desktop](https://github.com/michaeljabbour/amplifier-desktop) |
+
+### Download Links
+
+| Platform | Download |
+|----------|----------|
+| macOS (Apple Silicon) | [Amplifier_1.1.0_aarch64.dmg](https://github.com/michaeljabbour/amplifier-desktop/releases/latest/download/Amplifier_1.1.0_aarch64.dmg) |
+| macOS (Intel) | [Amplifier_1.1.0_x64.dmg](https://github.com/michaeljabbour/amplifier-desktop/releases/latest/download/Amplifier_1.1.0_x64.dmg) |
+| Windows (x64) | [Amplifier_1.1.0_x64-setup.exe](https://github.com/michaeljabbour/amplifier-desktop/releases/latest/download/Amplifier_1.1.0_x64-setup.exe) |
+| Windows (ARM64) | [Amplifier_1.1.0_arm64-setup.exe](https://github.com/michaeljabbour/amplifier-desktop/releases/latest/download/Amplifier_1.1.0_arm64-setup.exe) |
+| Linux (Debian/Ubuntu) | [amplifier_1.1.0_amd64.deb](https://github.com/michaeljabbour/amplifier-desktop/releases/latest/download/amplifier_1.1.0_amd64.deb) |
+
+---
+
 ## Architecture
 
 ### Three-Tier Design
@@ -289,7 +311,7 @@ async def restore_context(self, session, history):
 
 ```
 1. Profile settings (from active profile YAML)
-2. Global settings (~/.amplifier/settings.yaml)
+2. Global settings (~/.amplifier/settings.json)
 3. Environment variables
 4. Defaults (hardcoded)
 ```
